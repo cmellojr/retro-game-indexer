@@ -1,0 +1,26 @@
+# retro-game-indexer calibration config
+#
+# Edit this file to refine detection results without changing code.
+# The application works normally without this file (all values are optional).
+
+[games]
+# Minimum confidence score (0.0-1.0). Default: 0.7
+# threshold = 0.8
+
+# Terms to always reject (false positives you identified).
+# These are added to the built-in stopwords and are case-insensitive.
+blocklist = []
+
+# Map transcription variants to the correct name.
+# Useful when Whisper misspells a term consistently.
+# Example: { "Pico Stech" = "PicoStation", "Pico Steixo" = "PicoStation" }
+[games.aliases]
+
+
+[maintenance]
+# Minimum confidence score (0.0-1.0). Default: 0.6
+# threshold = 0.7
+
+blocklist = []
+
+[maintenance.aliases]

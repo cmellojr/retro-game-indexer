@@ -1,0 +1,12 @@
+"""Default transcription hints for retro hardware maintenance terms."""
+
+DEFAULT_HINTS: str = (
+    "capacitor, resistor, transistor, diodo, LED, "
+    "ferro de solda, solda, estanho, flux, multímetro, "
+    "osciloscópio, fonte de alimentação, regulador de tensão, "
+    "mod RGB, recap, retrobrighting, shell swap, "
+    "placa mãe, trilha, via, curto circuito, "
+    "cartucho, conector, flat cable, CI, chip, "
+    "troca de capacitor, limpeza, álcool isopropílico, "
+    "chave torx, chave gamebit, dessoldar, refluxo"
+)
