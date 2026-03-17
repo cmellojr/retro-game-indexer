@@ -5,17 +5,28 @@ from gliner import GLiNER
 from retro_game_indexer.pipelines.maintenance.filters import STOPWORDS
 
 _model: GLiNER | None = None
+_model_key: tuple[str, str] | None = None
 
 
-def _get_model() -> GLiNER:
+def _get_model(
+    model_name: str = "urchade/gliner_base", device: str = "cpu"
+) -> GLiNER:
     """Get or create a cached GLiNER model instance.
+
+    Args:
+        model_name: HuggingFace model identifier.
+        device: Device to run on ("cpu" or "cuda").
 
     Returns:
         Cached GLiNER model instance.
     """
-    global _model
-    if _model is None:
-        _model = GLiNER.from_pretrained("urchade/gliner_base")
+    global _model, _model_key
+    key = (model_name, device)
+    if _model is None or _model_key != key:
+        _model = GLiNER.from_pretrained(model_name)
+        if device != "cpu":
+            _model = _model.to(device)
+        _model_key = key
     return _model
 
 
@@ -31,6 +42,8 @@ class MaintenanceDetector:
         threshold: float = 0.6,
         blocklist: set[str] | None = None,
         aliases: dict[str, str] | None = None,
+        model_name: str = "urchade/gliner_base",
+        device: str = "cpu",
     ) -> None:
         """Initialize MaintenanceDetector.
 
@@ -38,8 +51,10 @@ class MaintenanceDetector:
             threshold: Minimum confidence score for detection (0.0-1.0).
             blocklist: Extra terms to reject (lowercased, added to stopwords).
             aliases: Map variant spellings (lowercased) to canonical names.
+            model_name: HuggingFace model identifier for GLiNER.
+            device: Device to run on ("cpu" or "cuda").
         """
-        self.model = _get_model()
+        self.model = _get_model(model_name, device)
         self.threshold = threshold
         self.labels = [
             "repair tool",

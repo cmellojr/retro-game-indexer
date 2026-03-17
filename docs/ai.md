@@ -1,6 +1,6 @@
 # AI Technologies
 
-This project uses two AI models running locally on CPU. No cloud APIs, no GPU required.
+This project uses two AI models running locally. No cloud APIs required. Defaults to CPU; GPU is supported via `config.toml`.
 
 ## Whisper (Speech-to-Text)
 
@@ -90,6 +90,7 @@ Post-processing applies:
 3. **User blocklist** — removes terms from `config.toml`
 4. **Alias normalization** — maps transcription variants to canonical names
 5. **Deduplication** — keeps only the first occurrence of each entity
+6. **Validation** — fuzzy-matches candidates against known datasets (`data/datasets/`), normalizes names to canonical form, and marks unmatched entities with `[?]`
 
 ---
 
@@ -111,7 +112,10 @@ YouTube URL
 [Filters] ──→ cleaned results (stopwords, blocklist, aliases, dedup)
     │
     ▼
-  Output
+[Validator] ──→ fuzzy match against known datasets → confirmed / uncertain [?]
+    │
+    ▼
+  Output + SQLite
 ```
 
 Both the audio download and transcription steps are cached on disk (`.cache/`). The detection step always runs fresh, allowing rapid iteration on `config.toml` calibration settings.
@@ -192,7 +196,9 @@ This would turn the project from a batch extraction tool into an interactive sea
 | **Parameters** | 74M | ~110M |
 | **Disk size** | ~150 MB (INT8) | ~440 MB |
 | **RAM usage** | ~1.5 GB | ~1 GB |
-| **Device** | CPU (INT8) | CPU |
+| **Device** | CPU (default) or CUDA | CPU (default) or CUDA |
 | **Input** | Audio (any format) | Text + label strings |
 | **Output** | Timestamped text segments | Scored entity spans |
 | **Approach** | Supervised (680k hours) | Zero-shot generalization |
+
+Device and model size are configurable in `config.toml`. See [usage.md](usage.md) for details.

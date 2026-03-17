@@ -17,10 +17,12 @@ import typer
 
 from retro_game_indexer.pipelines.games.detector import GameDetector
 from retro_game_indexer.pipelines.games.hints import DEFAULT_HINTS as GAME_HINTS
+from retro_game_indexer.pipelines.games.validator import GameValidator
 from retro_game_indexer.pipelines.maintenance.detector import MaintenanceDetector
 from retro_game_indexer.pipelines.maintenance.hints import (
     DEFAULT_HINTS as MAINTENANCE_HINTS,
 )
+from retro_game_indexer.pipelines.maintenance.validator import MaintenanceValidator
 from retro_game_indexer.shared.audio import download_audio
 from retro_game_indexer.shared.cache import (
     cache_audio,
@@ -30,7 +32,12 @@ from retro_game_indexer.shared.cache import (
     get_cached_transcript,
 )
 from retro_game_indexer.shared.channel import VideoInfo, list_videos, resolve_channel
-from retro_game_indexer.shared.config import PipelineConfig, load_config
+from retro_game_indexer.shared.config import (
+    AppConfig,
+    PipelineConfig,
+    WhisperConfig,
+    load_config,
+)
 from retro_game_indexer.shared.db import (
     list_processed_videos,
     save_detections,
@@ -60,33 +67,45 @@ def _get_hint(pipeline: str) -> str:
 
 
 def _get_detectors(
-    pipeline: str, config: dict[str, PipelineConfig] | None = None
-) -> list[tuple[str, object]]:
-    """Create detector instances for the selected pipeline.
+    pipeline: str, config: AppConfig | None = None
+) -> list[tuple[str, object, object]]:
+    """Create detector and validator instances for the selected pipeline.
 
     Args:
         pipeline: Pipeline name ("games", "maintenance", or "all").
-        config: Per-pipeline user configuration from config.toml.
+        config: Application configuration from config.toml.
 
     Returns:
-        List of (label, detector) tuples.
+        List of (label, detector, validator) tuples.
     """
-    config = config or {}
-    detectors: list[tuple[str, object]] = []
+    config = config or AppConfig()
+    detectors: list[tuple[str, object, object]] = []
 
     if pipeline in ("games", "all"):
-        cfg = config.get("games", PipelineConfig())
-        kwargs: dict = {"blocklist": cfg.blocklist, "aliases": cfg.aliases}
+        cfg = config.games
+        kwargs: dict = {
+            "blocklist": cfg.blocklist,
+            "aliases": cfg.aliases,
+            "model_name": config.gliner.model_name,
+            "device": config.gliner.device,
+        }
         if cfg.threshold is not None:
             kwargs["threshold"] = cfg.threshold
-        detectors.append(("games", GameDetector(**kwargs)))
+        detectors.append(("games", GameDetector(**kwargs), GameValidator()))
 
     if pipeline in ("maintenance", "all"):
-        cfg = config.get("maintenance", PipelineConfig())
-        kwargs = {"blocklist": cfg.blocklist, "aliases": cfg.aliases}
+        cfg = config.maintenance
+        kwargs = {
+            "blocklist": cfg.blocklist,
+            "aliases": cfg.aliases,
+            "model_name": config.gliner.model_name,
+            "device": config.gliner.device,
+        }
         if cfg.threshold is not None:
             kwargs["threshold"] = cfg.threshold
-        detectors.append(("maintenance", MaintenanceDetector(**kwargs)))
+        detectors.append(
+            ("maintenance", MaintenanceDetector(**kwargs), MaintenanceValidator())
+        )
 
     return detectors
 
@@ -95,8 +114,9 @@ def _analyze_single_video(
     url: str,
     hint: str,
     tmp_dir: Path,
-    detectors: list[tuple[str, object]],
+    detectors: list[tuple[str, object, object]],
     use_cache: bool = True,
+    whisper_config: WhisperConfig | None = None,
 ) -> dict[str, list[dict]]:
     """Analyze one video and return mentions from all detectors.
 
@@ -104,8 +124,9 @@ def _analyze_single_video(
         url: YouTube video URL.
         hint: Transcription hint for Whisper.
         tmp_dir: Temporary directory for audio files.
-        detectors: List of (label, detector) tuples.
+        detectors: List of (label, detector, validator) tuples.
         use_cache: If True, use disk cache for audio and transcription.
+        whisper_config: Whisper model settings (size, device, compute_type).
 
     Returns:
         Dict mapping pipeline label to list of mention dicts.
@@ -138,15 +159,25 @@ def _analyze_single_video(
             if pct >= 100:
                 print()
 
-        segments = transcribe(audio, hint=hint, on_progress=_progress)
+        wcfg = whisper_config or WhisperConfig()
+        segments = transcribe(
+            audio,
+            model_size=wcfg.model_size,
+            device=wcfg.device,
+            compute_type=wcfg.compute_type,
+            hint=hint,
+            on_progress=_progress,
+        )
         if use_cache:
             cache_transcript(video_id, hint, segments)
 
-    # Detection: always runs (depends on config.toml calibration)
+    # Detection + validation: always runs (depends on config.toml calibration)
     results: dict[str, list[dict]] = {}
-    for label, detector in detectors:
+    for label, detector, validator in detectors:
         print(f"  Detecting ({label})...")
-        results[label] = detector.detect(segments)
+        candidates = detector.detect(segments)
+        print(f"  Validating ({label})...")
+        results[label] = validator.validate(candidates)
 
     return results
 
@@ -176,9 +207,10 @@ def _print_mentions(
         links: If True, append a timestamped YouTube link to each mention.
     """
     for m in mentions:
+        mark = "" if m.get("validated", True) else " [?]"
         line = (
             f"  {m['timestamp']:.1f}s  {m['name']}  "
-            f"[{m['category']}]  score={m['confidence']:.2f}"
+            f"[{m['category']}]  score={m['confidence']:.2f}{mark}"
         )
         if links and video_url:
             line += f"  {_timestamp_url(video_url, m['timestamp'])}"
@@ -359,14 +391,15 @@ def analyze(
     detectors = _get_detectors(pipeline, cfg)
 
     results = _analyze_single_video(
-        url, effective_hint, tmp_dir, detectors, use_cache=not no_cache
+        url, effective_hint, tmp_dir, detectors,
+        use_cache=not no_cache, whisper_config=cfg.whisper,
     )
 
     # Persist to database
     video_id = extract_video_id(url)
     save_video(video_id, url, title=url)
     for label, mentions in results.items():
-        pipeline_cfg = cfg.get(label, PipelineConfig())
+        pipeline_cfg = getattr(cfg, label, PipelineConfig())
         run_id = save_run(
             video_id, label, pipeline_cfg.threshold,
             pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
@@ -444,7 +477,7 @@ def channel(
         try:
             results = _analyze_single_video(
                 video.url, effective_hint, sub_dir, detectors,
-                use_cache=not no_cache,
+                use_cache=not no_cache, whisper_config=cfg.whisper,
             )
 
             # Persist to database
@@ -454,7 +487,7 @@ def channel(
                 video.upload_date, video.duration, video.live_status,
             )
             for label, mentions in results.items():
-                pipeline_cfg = cfg.get(label, PipelineConfig())
+                pipeline_cfg = getattr(cfg, label, PipelineConfig())
                 run_id = save_run(
                     vid, label, pipeline_cfg.threshold,
                     pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
@@ -467,7 +500,7 @@ def channel(
         except Exception as exc:
             print(f"  ERROR: Skipping - {exc}")
             all_results.append(
-                {"video": video, "results": {l: [] for l, _ in detectors}}
+                {"video": video, "results": {l: [] for l, _, _ in detectors}}
             )
 
     # Final report
@@ -475,7 +508,7 @@ def channel(
     print("RESULTS")
     print("=" * 50)
 
-    unique_names: dict[str, set[str]] = {l: set() for l, _ in detectors}
+    unique_names: dict[str, set[str]] = {l: set() for l, _, _ in detectors}
 
     for result in all_results:
         video = result["video"]
@@ -522,9 +555,10 @@ def search(
         if row["title"] != current_video:
             current_video = row["title"]
             print(f"  --- {current_video} ---")
+        mark = "" if row.get("validated", 1) else " [?]"
         line = (
             f"    {row['timestamp']:.1f}s  {row['name']}  "
-            f"[{row['category']}]  score={row['confidence']:.2f}"
+            f"[{row['category']}]  score={row['confidence']:.2f}{mark}"
         )
         print(line)
 

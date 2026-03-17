@@ -1,7 +1,20 @@
-# retro-game-indexer calibration config
+# retro-game-indexer configuration
 #
-# Edit this file to refine detection results without changing code.
+# Edit this file to configure models and refine detection results.
 # The application works normally without this file (all values are optional).
+
+# ── Model settings ──────────────────────────────────────────────────
+
+[whisper]
+# model_size = "base"          # tiny, base, small, medium, large
+# device = "cpu"               # cpu or cuda
+# compute_type = "int8"        # int8, float16, float32
+
+[gliner]
+# model_name = "urchade/gliner_base"
+# device = "cpu"               # cpu or cuda
+
+# ── Pipeline calibration ────────────────────────────────────────────
 
 [games]
 # Minimum confidence score (0.0-1.0). Default: 0.7

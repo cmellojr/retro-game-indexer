@@ -1,6 +1,8 @@
 """Stopwords and console names to filter from game detection."""
 
-STOPWORDS: set[str] = {
+from retro_game_indexer.shared.datasets import load_dataset
+
+_FALLBACK_STOPWORDS: set[str] = {
     "jogo", "jogos", "game", "games",
     "rpg", "rpgs", "super", "power up",
     "galera", "pessoal", "gente",
@@ -10,7 +12,7 @@ STOPWORDS: set[str] = {
     "rotacionam",
 }
 
-CONSOLES: set[str] = {
+_FALLBACK_CONSOLES: set[str] = {
     "super nintendo", "snes", "super famicom",
     "mega drive", "genesis", "sega genesis",
     "nes", "famicom", "nintendo",
@@ -18,3 +20,9 @@ CONSOLES: set[str] = {
     "xbox", "game boy", "gameboy",
     "nintendo 64", "n64", "gamecube", "wii", "switch",
 }
+
+_stopwords_data = load_dataset("games", "stopwords")
+STOPWORDS: set[str] = set(_stopwords_data) if _stopwords_data else _FALLBACK_STOPWORDS
+
+_consoles_data = load_dataset("games", "consoles")
+CONSOLES: set[str] = set(_consoles_data) if _consoles_data else _FALLBACK_CONSOLES

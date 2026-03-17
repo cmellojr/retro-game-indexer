@@ -37,12 +37,24 @@ CREATE TABLE IF NOT EXISTS detections (
     name        TEXT NOT NULL,
     category    TEXT NOT NULL,
     timestamp   REAL NOT NULL,
-    confidence  REAL NOT NULL
+    confidence  REAL NOT NULL,
+    validated   INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_detections_run ON detections(run_id);
 CREATE INDEX IF NOT EXISTS idx_detections_name ON detections(name COLLATE NOCASE);
 """
+
+
+def _migrate(db: sqlite3.Connection) -> None:
+    """Apply schema migrations for existing databases."""
+    # Add validated column if missing (added in v0.3)
+    cols = {row[1] for row in db.execute("PRAGMA table_info(detections)")}
+    if "validated" not in cols:
+        db.execute(
+            "ALTER TABLE detections ADD COLUMN validated INTEGER NOT NULL DEFAULT 1"
+        )
+        db.commit()
 
 
 def _get_db() -> sqlite3.Connection:
@@ -55,6 +67,7 @@ def _get_db() -> sqlite3.Connection:
         _connection.execute("PRAGMA journal_mode = WAL")
         _connection.execute("PRAGMA foreign_keys = ON")
         _connection.executescript(_SCHEMA)
+        _migrate(_connection)
     return _connection
 
 
@@ -137,16 +150,23 @@ def save_detections(run_id: int, mentions: list[dict]) -> None:
     Args:
         run_id: ID of the parent run record.
         mentions: List of mention dicts with "name", "category",
-            "timestamp", and "confidence" keys.
+            "timestamp", "confidence", and optional "validated" keys.
     """
     if not mentions:
         return
     db = _get_db()
     db.executemany(
-        """INSERT INTO detections (run_id, name, category, timestamp, confidence)
-           VALUES (?, ?, ?, ?, ?)""",
+        """INSERT INTO detections (run_id, name, category, timestamp, confidence, validated)
+           VALUES (?, ?, ?, ?, ?, ?)""",
         [
-            (run_id, m["name"], m["category"], m["timestamp"], m["confidence"])
+            (
+                run_id,
+                m["name"],
+                m["category"],
+                m["timestamp"],
+                m["confidence"],
+                int(m.get("validated", True)),
+            )
             for m in mentions
         ],
     )
@@ -168,7 +188,7 @@ def search_by_name(name: str) -> list[dict]:
     db = _get_db()
     rows = db.execute(
         """SELECT v.title, v.url, d.name, d.category, d.timestamp,
-                  d.confidence, r.pipeline, r.created_at
+                  d.confidence, d.validated, r.pipeline, r.created_at
            FROM detections d
            JOIN runs r ON d.run_id = r.id
            JOIN videos v ON r.video_id = v.video_id

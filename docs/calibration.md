@@ -117,9 +117,26 @@ blocklist = []
 retro-game-indexer analyze URL --config my-custom-config.toml
 ```
 
+## Datasets
+
+In addition to `config.toml`, you can improve detection accuracy by editing the JSON datasets in `data/datasets/`:
+
+| File | Purpose |
+|------|---------|
+| `games/known_titles.json` | Known game titles for validation (fuzzy match) |
+| `games/stopwords.json` | Words to always reject |
+| `games/consoles.json` | Console names to filter out |
+| `games/hints.json` | Whisper transcription hints |
+| `maintenance/known_terms.json` | Known tools and components for validation |
+| `maintenance/stopwords.json` | Words to always reject |
+| `maintenance/hints.json` | Whisper transcription hints |
+
+Adding a title to `known_titles.json` helps the validator confirm detections and normalize names. Adding a term to `stopwords.json` rejects it before it reaches the validator.
+
 ## Tips
 
 - Start with the default threshold, then increase if you see too much noise
 - After the first run, re-runs use cache — only detection runs again (~15s)
 - The blocklist and aliases are applied **after** model inference, so they don't affect what the model sees
-- Whisper hints (in `hints.py`) affect transcription quality; blocklist/aliases affect post-processing
+- Whisper hints (loaded from `data/datasets/*/hints.json`) affect transcription quality; blocklist/aliases affect post-processing
+- Entities marked with `[?]` in the output were not found in the known datasets — add them to `known_titles.json` or `known_terms.json` if they are valid
