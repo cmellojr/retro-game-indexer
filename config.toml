@@ -25,8 +25,9 @@
 blocklist = []
 
 # Map transcription variants to the correct name.
-# Useful when Whisper misspells a term consistently.
-# Example: { "Pico Stech" = "PicoStation", "Pico Steixo" = "PicoStation" }
+# Stable aliases go in data/datasets/games/aliases.json.
+# Use this section for quick overrides during calibration.
+# Example: { "Pico Stech" = "PicoStation" }
 [games.aliases]
 
 

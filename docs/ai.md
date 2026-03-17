@@ -202,3 +202,97 @@ This would turn the project from a batch extraction tool into an interactive sea
 | **Approach** | Supervised (680k hours) | Zero-shot generalization |
 
 Device and model size are configurable in `config.toml`. See [usage.md](usage.md) for details.
+
+---
+
+## Future: Visual Game Detection
+
+The current pipeline identifies games from **audio** (speech-to-text + NER). A complementary approach is to identify games from **video frames** — detecting what game is being shown on screen.
+
+### CLIP (Contrastive Language-Image Pre-training)
+
+**Library:** [OpenCLIP](https://github.com/mlfoundations/open_clip)
+**Model:** `ViT-B-32` (87M parameters, 512-dim embeddings)
+
+CLIP is a vision-language model trained by OpenAI on 400 million image-text pairs. It learns to align images and text in a shared embedding space, enabling **zero-shot image classification** — you can compare an image against text descriptions without training a classifier.
+
+**How it would work here:**
+1. Extract keyframes from the video
+2. Compute CLIP embeddings for each frame
+3. Compare against a reference database of known game screenshots
+4. Frames with high cosine similarity to a reference screenshot → game detected
+
+**Key concepts:**
+
+- **Vision Transformer (ViT)**: CLIP's image encoder. Splits an image into 32x32 patches, treats each patch as a token, and processes them through a transformer. ViT-B-32 is a good balance of speed and accuracy for CPU inference.
+
+- **Contrastive learning**: during training, CLIP learns to maximize similarity between matching image-text pairs and minimize it for non-matching pairs. This creates an embedding space where semantically related images and text are close together.
+
+- **Cosine similarity**: the metric used to compare embeddings. Two vectors pointing in the same direction (similarity = 1.0) represent similar content. A threshold of ~0.75 separates matches from non-matches.
+
+- **Zero-shot capability**: unlike traditional classifiers that need labeled training data for each game, CLIP can match against new game screenshots without retraining. You just add reference screenshots to the database.
+
+### Alternative Models
+
+| Model | Parameters | Embedding dim | CPU speed | Best for |
+|---|---|---|---|---|
+| **OpenCLIP ViT-B-32** | 87M | 512 | ~50-100ms/frame | Best balance for CPU |
+| **MobileCLIP-S0** (Apple) | ~50M | 512 | ~20-40ms/frame | Fastest on CPU |
+| **SigLIP 2 ViT-B** (Google) | 86M | 768 | ~60-120ms/frame | Better zero-shot accuracy |
+| **DINOv2 ViT-S** | 22M | 384 | ~30-60ms/frame | Pure visual similarity (no text) |
+| **EfficientNetV2S** | 24M | — | ~20-50ms/frame | Supervised classification (needs training) |
+
+### Perceptual Hashing
+
+**Library:** [ImageHash](https://github.com/JohannesBuchner/imagehash)
+
+A lightweight alternative to neural embeddings. Perceptual hashing (pHash) converts images into short hash values where visually similar images produce similar hashes. Extremely fast to compute and compare.
+
+Especially effective for retro games — pixel art and 8/16-bit graphics produce very distinctive hashes. Can serve as a fast pre-filter before running the more expensive CLIP embedding.
+
+### Frame Extraction
+
+Instead of processing every frame of a video (30fps = 54,000 frames per 30 minutes), intelligent sampling extracts only meaningful keyframes:
+
+| Strategy | Library | Frames per 30-min video |
+|---|---|---|
+| **Scene detection** | [PySceneDetect](https://github.com/Breakthrough/PySceneDetect) | ~50-100 (only when visuals change) |
+| Fixed interval (30s) | OpenCV / [Decord](https://github.com/dmlc/decord) | ~60 |
+| YouTube storyboards | yt-dlp (metadata) | ~900 (low resolution, no download) |
+
+Scene detection is the recommended approach — it avoids processing redundant frames from static/talking-head segments and focuses on moments where the screen shows different content.
+
+### Reference Database
+
+To identify games by visual similarity, a reference database of known game screenshots is needed:
+
+| Source | Coverage | Access |
+|---|---|---|
+| [IGDB](https://www.igdb.com/) | 200k+ games, screenshots + metadata | Free API (Twitch OAuth) |
+| [ScreenScraper.fr](https://screenscraper.fr/) | Excellent retro coverage | Free API (50k assets/day) |
+| [MobyGames](https://www.mobygames.com/) | Screenshots + metadata | API with rate limits |
+
+Reference screenshots are embedded once with CLIP and stored in a vector index ([FAISS](https://github.com/facebookresearch/faiss)). At query time, each video frame embedding is compared against the index to find the closest match.
+
+### Proposed Pipeline
+
+```
+YouTube URL
+    │
+    ├──→ [yt-dlp] ──→ audio ──→ [Whisper] ──→ [GLiNER] ──→ audio mentions
+    │
+    └──→ [yt-dlp] ──→ video (360p) ──→ [PySceneDetect] ──→ keyframes
+                                           │
+                                           ▼
+                                      [OpenCLIP] ──→ frame embeddings
+                                           │
+                                           ▼
+                                      [FAISS] ──→ visual matches
+                                           │
+                                           ▼
+                                    Merged results + SQLite
+```
+
+### Academic Reference
+
+[From Pixels to Titles: Video Game Identification by Screenshots using CNNs](https://arxiv.org/abs/2311.15963) (IEEE Transactions on Games, 2025) — tested 13 architectures across 22 console systems and 8,796 games. EfficientNetV2S achieved 77% accuracy. Code: [github.com/fbreve/videogame](https://github.com/fbreve/videogame).

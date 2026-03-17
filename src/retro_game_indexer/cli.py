@@ -38,6 +38,7 @@ from retro_game_indexer.shared.config import (
     WhisperConfig,
     load_config,
 )
+from retro_game_indexer.shared.datasets import load_dataset
 from retro_game_indexer.shared.db import (
     list_processed_videos,
     save_detections,
@@ -66,6 +67,29 @@ def _get_hint(pipeline: str) -> str:
     return f"{GAME_HINTS}, {MAINTENANCE_HINTS}"
 
 
+def _merge_aliases(
+    pipeline: str, config_aliases: dict[str, str] | None
+) -> dict[str, str]:
+    """Load aliases from JSON dataset and merge with config.toml overrides.
+
+    Args:
+        pipeline: Pipeline name ("games" or "maintenance").
+        config_aliases: Aliases from config.toml (override layer).
+
+    Returns:
+        Merged alias dict (JSON base + config.toml overrides).
+    """
+    dataset_aliases = load_dataset(pipeline, "aliases")
+    merged: dict[str, str] = (
+        {k.lower(): v for k, v in dataset_aliases.items()}
+        if isinstance(dataset_aliases, dict)
+        else {}
+    )
+    if config_aliases:
+        merged.update(config_aliases)
+    return merged
+
+
 def _get_detectors(
     pipeline: str, config: AppConfig | None = None
 ) -> list[tuple[str, object, object]]:
@@ -83,9 +107,10 @@ def _get_detectors(
 
     if pipeline in ("games", "all"):
         cfg = config.games
+        aliases = _merge_aliases("games", cfg.aliases)
         kwargs: dict = {
             "blocklist": cfg.blocklist,
-            "aliases": cfg.aliases,
+            "aliases": aliases,
             "model_name": config.gliner.model_name,
             "device": config.gliner.device,
         }
@@ -95,9 +120,10 @@ def _get_detectors(
 
     if pipeline in ("maintenance", "all"):
         cfg = config.maintenance
+        aliases = _merge_aliases("maintenance", cfg.aliases)
         kwargs = {
             "blocklist": cfg.blocklist,
-            "aliases": cfg.aliases,
+            "aliases": aliases,
             "model_name": config.gliner.model_name,
             "device": config.gliner.device,
         }

@@ -8,20 +8,20 @@ _DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "datasets"
 
 
 @lru_cache
-def load_dataset(pipeline: str, name: str) -> list[str]:
+def load_dataset(pipeline: str, name: str) -> list | dict:
     """Load a JSON dataset file.
 
-    Reads a JSON array from ``data/datasets/{pipeline}/{name}.json``.
+    Reads a JSON file from ``data/datasets/{pipeline}/{name}.json``.
     Returns an empty list if the file does not exist, allowing the
     caller to fall back to inline defaults.
 
     Args:
         pipeline: Pipeline name ("games" or "maintenance").
         name: Dataset filename without extension
-              ("known_titles", "stopwords", "consoles", "hints").
+              ("known_titles", "stopwords", "consoles", "hints", "aliases").
 
     Returns:
-        List of strings from the JSON file, or empty list.
+        Parsed JSON content (list or dict), or empty list if missing.
     """
     path = _DATA_DIR / pipeline / f"{name}.json"
     if not path.is_file():
