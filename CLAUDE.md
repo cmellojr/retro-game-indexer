@@ -14,16 +14,29 @@ retro-game-indexer list "https://youtube.com/@Channel" -t live            # list
 retro-game-indexer channel "https://youtube.com/@Channel" -n 5            # analyze channel videos
 retro-game-indexer search "Castlevania"                                   # search across all analyzed videos
 retro-game-indexer history                                                # list analyzed videos
+retro-game-indexer rebuild                                                # rebuild SQLite from data lake
 python -m retro_game_indexer analyze "URL"                                # run as module
 ```
 
 ## Architecture
 
-Two detection pipelines with shared infrastructure:
+Two detection pipelines with shared infrastructure and a data-first persistence model.
 
-**Shared pipeline:** download audio (cached) → transcribe (cached) → detect entities → validate against datasets → display results
+**Pipeline:** download audio (cached) → transcribe (cached) → detect entities → validate against datasets → persist to data lake (bronze/silver/gold) + SQLite → display results
 
 Only `cli.py` orchestrates — no module imports another module. Each can be replaced independently.
+
+### Data Lake (`data/`)
+
+The data lake is the source of truth. SQLite is a secondary index, rebuildable via `retro-game-indexer rebuild`.
+
+| Layer | Path | Contents | Mutability |
+|---|---|---|---|
+| **Bronze** | `data/bronze/{video_id}/` | Raw YouTube metadata + Whisper transcripts | Immutable (append-only) |
+| **Silver** | `data/silver/{video_id}/` | Detection results + config snapshot per run | Versioned (one file per run_id) |
+| **Gold** | `data/gold/{video_id}.json` | Consolidated confirmed entities | Overwritable (latest truth) |
+
+Run IDs follow the format: `YYYYMMDD_HHMMSS_{pipeline}_{model_hash8}`.
 
 ### Shared modules (`shared/`)
 
@@ -33,9 +46,10 @@ Only `cli.py` orchestrates — no module imports another module. Each can be rep
 | `transcriber.py` | Speech-to-text with cached Whisper model | faster-whisper |
 | `channel.py` | List videos from channel/playlist without downloading | yt-dlp |
 | `config.py` | Load model settings and pipeline calibration from `config.toml` | tomllib (stdlib) |
-| `cache.py` | Disk cache for audio files and transcription segments | — |
-| `db.py` | SQLite persistence for video metadata and detection results | sqlite3 (stdlib) |
-| `datasets.py` | Load JSON datasets from `data/datasets/` | json (stdlib) |
+| `cache.py` | Disk cache for audio files; transcript cache delegates to bronze | — |
+| `db.py` | SQLite index for video metadata and detection results | sqlite3 (stdlib) |
+| `datasets.py` | Load JSON datasets from `datasets/reference/` + `datasets/community/` | json (stdlib) |
+| `datalake.py` | Read/write bronze, silver, gold layers; rebuild SQLite from lake | json (stdlib) |
 
 ### Detection pipelines (`pipelines/`)
 
@@ -55,21 +69,23 @@ Only `cli.py` orchestrates — no module imports another module. Each can be rep
 
 | Module | Responsibility | External dep |
 |---|---|---|
-| `cli.py` | Typer CLI with `list`, `analyze`, `channel`, `search` and `history` commands | typer |
+| `cli.py` | Typer CLI with `list`, `analyze`, `channel`, `search`, `history`, and `rebuild` commands | typer |
 
 Both `transcriber.py` and detector modules use a global `_get_model()` singleton to cache heavy ML models across calls.
 
 All detectors follow the `Detector` protocol: `detect(segments) -> list[dict]` returning `{name, category, timestamp, confidence}`.
 
-All validators follow the `Validator` protocol: `validate(candidates) -> list[dict]` adding `{validated}` key and normalizing names via fuzzy matching against JSON datasets in `data/datasets/`.
+All validators follow the `Validator` protocol: `validate(candidates) -> list[dict]` adding `{validated}` key and normalizing names via fuzzy matching against JSON datasets.
 
-### Datasets (`data/datasets/`)
+### Datasets (`datasets/`)
 
-User-editable JSON files for stopwords, hints, console names, and known entities:
-- `data/datasets/games/` — `known_titles.json`, `stopwords.json`, `consoles.json`, `hints.json`
-- `data/datasets/maintenance/` — `known_terms.json`, `stopwords.json`, `hints.json`
+Two-layer system: reference (git-tracked) + community (user-editable, gitignored). Merged at load time.
 
-Filters and hints modules load from JSON with inline fallback if files are missing.
+- `datasets/reference/games/` — `known_titles.json`, `stopwords.json`, `consoles.json`, `hints.json`, `aliases.json`
+- `datasets/reference/maintenance/` — `known_terms.json`, `stopwords.json`, `hints.json`, `aliases.json`
+- `datasets/community/` — same structure, overrides/extends reference datasets
+
+Filters and hints modules load via `datasets.py` with inline fallback if files are missing.
 
 ### Configuration (`config.toml`)
 
@@ -82,7 +98,7 @@ User-editable TOML file at the project root.
 **Pipeline calibration** — per-pipeline sections (`[games]`, `[maintenance]`):
 - `threshold` — override confidence score (0.0-1.0)
 - `blocklist` — terms to reject (false positives)
-- `aliases` — map transcription variants to canonical names (e.g. `"Pico Stech" = "PicoStation"`)
+- `aliases` — quick overrides (stable aliases go in `datasets/reference/*/aliases.json`)
 
 ## Conventions
 
@@ -92,3 +108,4 @@ User-editable TOML file at the project root.
 - **Target**: Python >= 3.12, defaults to CPU with int8 quantization (GPU configurable via config.toml)
 - **Linter**: ruff
 - **Language context**: Videos in Brazilian Portuguese
+- **Data principle**: Data is the source of truth. Code is replaceable. All records include `language` and `schema_version` fields.

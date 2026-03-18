@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS videos (
     upload_date TEXT,
     duration    REAL,
     live_status TEXT,
+    language    TEXT DEFAULT 'pt-BR',
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
 );
 
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS runs (
     blocklist_json  TEXT,
     aliases_json    TEXT,
     hint            TEXT NOT NULL,
+    run_id          TEXT,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
 );
 
@@ -49,12 +51,23 @@ CREATE INDEX IF NOT EXISTS idx_detections_name ON detections(name COLLATE NOCASE
 def _migrate(db: sqlite3.Connection) -> None:
     """Apply schema migrations for existing databases."""
     # Add validated column if missing (added in v0.3)
-    cols = {row[1] for row in db.execute("PRAGMA table_info(detections)")}
-    if "validated" not in cols:
+    det_cols = {row[1] for row in db.execute("PRAGMA table_info(detections)")}
+    if "validated" not in det_cols:
         db.execute(
             "ALTER TABLE detections ADD COLUMN validated INTEGER NOT NULL DEFAULT 1"
         )
-        db.commit()
+
+    # Add run_id string column to runs (added in v0.4)
+    run_cols = {row[1] for row in db.execute("PRAGMA table_info(runs)")}
+    if "run_id" not in run_cols:
+        db.execute("ALTER TABLE runs ADD COLUMN run_id TEXT")
+
+    # Add language column to videos (added in v0.4)
+    vid_cols = {row[1] for row in db.execute("PRAGMA table_info(videos)")}
+    if "language" not in vid_cols:
+        db.execute("ALTER TABLE videos ADD COLUMN language TEXT DEFAULT 'pt-BR'")
+
+    db.commit()
 
 
 def _get_db() -> sqlite3.Connection:
@@ -113,8 +126,9 @@ def save_run(
     blocklist: set[str] | None,
     aliases: dict[str, str] | None,
     hint: str,
+    run_id: str | None = None,
 ) -> int:
-    """Record a detection run and return its ID.
+    """Record a detection run and return its integer ID.
 
     Args:
         video_id: YouTube video ID.
@@ -123,14 +137,15 @@ def save_run(
         blocklist: Blocklist terms used.
         aliases: Alias mappings used.
         hint: Whisper hint string used.
+        run_id: Data lake run identifier (e.g. "20260317_143500_games_a1b2c3d4").
 
     Returns:
-        The auto-generated run ID.
+        The auto-generated integer run ID.
     """
     db = _get_db()
     cursor = db.execute(
-        """INSERT INTO runs (video_id, pipeline, threshold, blocklist_json, aliases_json, hint)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO runs (video_id, pipeline, threshold, blocklist_json, aliases_json, hint, run_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             video_id,
             pipeline,
@@ -138,6 +153,7 @@ def save_run(
             json.dumps(sorted(blocklist)) if blocklist else None,
             json.dumps(aliases, ensure_ascii=False) if aliases else None,
             hint,
+            run_id,
         ),
     )
     db.commit()

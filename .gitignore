@@ -14,5 +14,16 @@ build/
 tmp/
 .cache/
 
+# Data lake (user-generated, not versioned)
+data/bronze/
+data/silver/
+data/gold/
+
+# Community datasets (user-editable overrides)
+datasets/community/
+
+# Vector embeddings (future)
+vector/embeddings/
+
 Thumbs.db
 .DS_Store
