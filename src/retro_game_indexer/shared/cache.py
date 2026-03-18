@@ -91,6 +91,9 @@ def cache_audio(video_id: str, audio_path: Path) -> Path:
 def get_cached_transcript(video_id: str, hint: str) -> list[dict] | None:
     """Return cached transcription segments, or None if not cached.
 
+    Checks the bronze data lake first, then falls back to the legacy
+    ``.cache/transcripts/`` directory.
+
     Args:
         video_id: YouTube video ID.
         hint: Whisper transcription hint (affects cache key).
@@ -98,6 +101,14 @@ def get_cached_transcript(video_id: str, hint: str) -> list[dict] | None:
     Returns:
         List of segment dicts, or None.
     """
+    # Try bronze layer first (data lake source of truth)
+    from retro_game_indexer.shared.datalake import get_bronze_transcript
+
+    segments = get_bronze_transcript(video_id, hint)
+    if segments is not None:
+        return segments
+
+    # Fall back to legacy .cache/transcripts/ path
     path = _CACHE_DIR / "transcripts" / f"{video_id}_{_hint_hash(hint)}.json"
     if not path.is_file():
         return None

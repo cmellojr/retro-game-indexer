@@ -6,43 +6,45 @@ Evolution plan for retro-game-indexer, from current audio-based detection toward
 
 ## Completed
 
-### v0.1 — Core Pipeline
+### v0.1.0 — Core Pipeline
 - [x] Download audio from YouTube via yt-dlp
 - [x] Transcribe with faster-whisper (cached)
 - [x] Detect game names with GLiNER zero-shot NER
-- [x] CLI with `analyze` command
+- [x] CLI with `analyze`, `list`, `channel`, `search`, `history` commands
 - [x] Whisper hints for domain vocabulary
-
-### v0.2 — Channel Support & Calibration
-- [x] `list` command — browse channel videos/lives
-- [x] `channel` command — batch analyze multiple videos
 - [x] Maintenance pipeline (tools, components, mods)
 - [x] `config.toml` calibration — threshold, blocklist, aliases
 - [x] Timestamped YouTube links (`-l` flag)
 - [x] Caching system (audio + transcripts)
-- [x] Progress bar for transcription
+- [x] SQLite persistence for video metadata and detections
 
-### v0.3 — Persistence & Validation
-- [x] SQLite database for video metadata and detections
-- [x] `search` command — query across all analyzed videos
-- [x] `history` command — list analyzed videos
+### v0.2.0 — Validation & Configurability
 - [x] Validation layer — fuzzy match against known datasets
 - [x] JSON datasets (known_titles, stopwords, consoles, hints, aliases)
 - [x] Configurable model parameters (GPU support via config.toml)
 - [x] HuggingFace token support (.env)
+- [x] Case-sensitivity fix in alias lookup
+
+### v0.3.0 — Data-First Architecture *(in progress)*
+- [x] Bronze/silver/gold data lake (medallion pattern)
+- [x] Two-layer datasets: `datasets/reference/` + `datasets/community/`
+- [x] Run ID system for detection versioning
+- [x] `rebuild` command — reconstruct SQLite from data lake
+- [x] Bronze fallback for transcript cache
+- [ ] Branching strategy and CONTRIBUTING.md
 
 ---
 
 ## Planned
 
-### v0.4 — Dataset Expansion & Calibration Refinement
+### v0.4.0 — Dataset Expansion & Export
 - [ ] Expand `known_titles.json` with comprehensive retro game lists (SNES, Mega Drive, NES, Game Boy, N64, PS1, Saturn, etc.)
 - [ ] IGDB API integration — auto-populate known titles from the Internet Game Database
 - [ ] Improve alias matching — handle multi-word fragments from GLiNER (e.g., long Japanese titles split into pieces)
 - [ ] Blocklist suggestions — detect recurring false positives across runs and suggest additions
-- [ ] Export results — CSV/JSON export for analysis in external tools
+- [ ] CSV/JSON export for analysis in external tools
 
-### v0.5 — Visual Game Detection
+### v0.5.0 — Visual Game Detection
 - [ ] Frame extraction from video using PySceneDetect (keyframe sampling at scene changes)
 - [ ] OpenCLIP ViT-B-32 integration — compute frame embeddings locally (CPU/GPU)
 - [ ] Reference screenshot database — scrape from IGDB/ScreenScraper.fr, embed with CLIP
@@ -52,13 +54,12 @@ Evolution plan for retro-game-indexer, from current audio-based detection toward
 - [ ] Visual pipeline calibration in `config.toml`
 - [ ] Optional perceptual hashing (pHash) as fast pre-filter
 
-### v0.6 — Data Layers & Knowledge Base
-- [ ] Reorganize data storage: `data/raw/` (audio), `data/processed/` (transcripts, embeddings), `data/knowledge/` (validated entities)
+### v0.6.0 — Cross-Video Analytics
 - [ ] Structured knowledge graph — games → videos → timestamps with confidence scores
 - [ ] Cross-video analytics — most mentioned games, detection trends over time
 - [ ] Dashboard or web UI for browsing indexed content
 
-### v0.7 — RAG & Natural Language Queries
+### v0.7.0 — RAG & Natural Language Queries
 - [ ] Embed transcript segments with a text embedding model
 - [ ] Vector index for transcript chunks (ChromaDB or FAISS)
 - [ ] Natural language query interface: "Which videos mention Castlevania?"
@@ -74,6 +75,5 @@ Evolution plan for retro-game-indexer, from current audio-based detection toward
 - **Multi-language support** — extend beyond Brazilian Portuguese
 - **Plugin system** — custom pipelines for other content types (music, movies, hardware)
 - **Real-time analysis** — process live streams as they happen
-- **Community datasets** — shared known_titles.json curated by the community
 - **IGDB enrichment** — auto-fetch game metadata (year, platform, genre) for detected titles
 - **Confidence fusion** — combine audio + visual + OCR scores for higher accuracy

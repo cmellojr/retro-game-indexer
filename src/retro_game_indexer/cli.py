@@ -39,6 +39,13 @@ from retro_game_indexer.shared.config import (
     load_config,
 )
 from retro_game_indexer.shared.datasets import load_dataset
+from retro_game_indexer.shared.datalake import (
+    generate_run_id,
+    save_bronze_metadata,
+    save_bronze_transcript,
+    save_gold_entities,
+    save_silver_detections,
+)
 from retro_game_indexer.shared.db import (
     list_processed_videos,
     save_detections,
@@ -196,6 +203,11 @@ def _analyze_single_video(
         )
         if use_cache:
             cache_transcript(video_id, hint, segments)
+
+        # Save to bronze layer (immutable)
+        save_bronze_transcript(
+            video_id, hint, segments, whisper_model=wcfg.model_size,
+        )
 
     # Detection + validation: always runs (depends on config.toml calibration)
     results: dict[str, list[dict]] = {}
@@ -421,16 +433,42 @@ def analyze(
         use_cache=not no_cache, whisper_config=cfg.whisper,
     )
 
-    # Persist to database
+    # Persist to data lake and database
     video_id = extract_video_id(url)
+    save_bronze_metadata(video_id, url, title=url)
     save_video(video_id, url, title=url)
+
+    gold_entities: dict[str, list[dict]] = {}
+    source_runs: dict[str, str] = {}
     for label, mentions in results.items():
         pipeline_cfg = getattr(cfg, label, PipelineConfig())
-        run_id = save_run(
+        run_id_str = generate_run_id(label, cfg.gliner.model_name)
+        source_runs[label] = run_id_str
+
+        # Silver layer
+        save_silver_detections(
+            video_id, run_id_str, label, mentions,
+            config_snapshot={
+                "threshold": pipeline_cfg.threshold,
+                "blocklist": sorted(pipeline_cfg.blocklist) if pipeline_cfg.blocklist else [],
+                "aliases": pipeline_cfg.aliases or {},
+                "hint": effective_hint,
+                "gliner_model": cfg.gliner.model_name,
+                "whisper_model": cfg.whisper.model_size,
+            },
+        )
+        gold_entities[label] = [m for m in mentions if m.get("validated", True)]
+
+        # SQLite (backward compat)
+        run_id_int = save_run(
             video_id, label, pipeline_cfg.threshold,
             pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
+            run_id=run_id_str,
         )
-        save_detections(run_id, mentions)
+        save_detections(run_id_int, mentions)
+
+    # Gold layer
+    save_gold_entities(video_id, gold_entities, url=url, title=url, source_runs=source_runs)
 
     for label, mentions in results.items():
         print(f"\n[{label.upper()}] {len(mentions)} items found:\n")
@@ -506,19 +544,48 @@ def channel(
                 use_cache=not no_cache, whisper_config=cfg.whisper,
             )
 
-            # Persist to database
+            # Persist to data lake and database
             vid = extract_video_id(video.url)
+            save_bronze_metadata(
+                vid, video.url, video.title,
+                video.upload_date, video.duration, video.live_status,
+            )
             save_video(
                 vid, video.url, video.title,
                 video.upload_date, video.duration, video.live_status,
             )
+
+            gold_entities: dict[str, list[dict]] = {}
+            source_runs: dict[str, str] = {}
             for label, mentions in results.items():
                 pipeline_cfg = getattr(cfg, label, PipelineConfig())
-                run_id = save_run(
+                run_id_str = generate_run_id(label, cfg.gliner.model_name)
+                source_runs[label] = run_id_str
+
+                save_silver_detections(
+                    vid, run_id_str, label, mentions,
+                    config_snapshot={
+                        "threshold": pipeline_cfg.threshold,
+                        "blocklist": sorted(pipeline_cfg.blocklist) if pipeline_cfg.blocklist else [],
+                        "aliases": pipeline_cfg.aliases or {},
+                        "hint": effective_hint,
+                        "gliner_model": cfg.gliner.model_name,
+                        "whisper_model": cfg.whisper.model_size,
+                    },
+                )
+                gold_entities[label] = [m for m in mentions if m.get("validated", True)]
+
+                run_id_int = save_run(
                     vid, label, pipeline_cfg.threshold,
                     pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
+                    run_id=run_id_str,
                 )
-                save_detections(run_id, mentions)
+                save_detections(run_id_int, mentions)
+
+            save_gold_entities(
+                vid, gold_entities, url=video.url, title=video.title,
+                source_runs=source_runs,
+            )
 
             total = sum(len(m) for m in results.values())
             print(f"  Found {total} items.")
@@ -615,6 +682,24 @@ def history() -> None:
             f"  — {row['total_runs']} runs, {row['total_detections']} detections"
         )
         print(f"           {row['url']}")
+
+
+@app.command()
+def rebuild(
+    config: str = typer.Option(
+        "config.toml", "--config", help="Path to config.toml"
+    ),
+) -> None:
+    """Rebuild SQLite database from data lake files.
+
+    Reads all bronze metadata and silver detection files
+    and repopulates the database. Use after manual data edits
+    or if the database becomes corrupted.
+    """
+    from retro_game_indexer.shared.datalake import rebuild_db_from_lake
+
+    count = rebuild_db_from_lake()
+    print(f"Rebuilt database from {count} videos.")
 
 
 if __name__ == "__main__":
