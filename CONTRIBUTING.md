@@ -116,7 +116,7 @@ The easiest way to contribute is by expanding the JSON datasets in `datasets/ref
 - **`games/known_titles.json`** — add game titles for better validation
 - **`games/aliases.json`** — map common misspellings or fragments to canonical names
 - **`games/stopwords.json`** — add false positives to filter out
-- **`maintenance/known_terms.json`** — add tools, components, and mod names
+- **`games/consoles.json`** — add console names
 
 For personal overrides that shouldn't be committed, use `datasets/community/` (gitignored).
 

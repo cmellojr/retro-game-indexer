@@ -6,9 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pip install -e .                                                          # install in dev mode
-retro-game-indexer analyze "https://youtube.com/watch?v=..."              # single video (games)
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p maintenance  # maintenance pipeline
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p all       # both pipelines
+retro-game-indexer analyze "https://youtube.com/watch?v=..."              # single video
 retro-game-indexer list "https://youtube.com/@Channel" -n 10              # list videos/lives
 retro-game-indexer list "https://youtube.com/@Channel" -t live            # list only lives
 retro-game-indexer channel "https://youtube.com/@Channel" -n 5            # analyze channel videos
@@ -20,7 +18,7 @@ python -m retro_game_indexer analyze "URL"                                # run 
 
 ## Architecture
 
-Two detection pipelines with shared infrastructure and a data-first persistence model.
+One detection pipeline with shared infrastructure and a data-first persistence model.
 
 **Pipeline:** download audio (cached) → transcribe (cached) → detect entities → validate against datasets → persist to data lake (bronze/silver/gold) + SQLite → display results
 
@@ -51,19 +49,15 @@ Run IDs follow the format: `YYYYMMDD_HHMMSS_{pipeline}_{model_hash8}`.
 | `datasets.py` | Load JSON datasets from `datasets/reference/` + `datasets/community/` | json (stdlib) |
 | `datalake.py` | Read/write bronze, silver, gold layers; rebuild SQLite from lake | json (stdlib) |
 
-### Detection pipelines (`pipelines/`)
+### Detection pipeline (`pipelines/`)
 
-| Pipeline | Module | Responsibility | External dep |
-|---|---|---|---|
+| Module | Responsibility | External dep |
+|---|---|---|
 | `base.py` | — | Detector and Validator protocol interfaces | — |
 | `games/detector.py` | GameDetector | Zero-shot NER for game names | GLiNER |
 | `games/validator.py` | GameValidator | Fuzzy match against known titles dataset | difflib (stdlib) |
 | `games/hints.py` | — | Whisper hints for game titles (from JSON) | — |
 | `games/filters.py` | — | Stopwords and console name filters (from JSON) | — |
-| `maintenance/detector.py` | MaintenanceDetector | NER for tools, components, mods | GLiNER |
-| `maintenance/validator.py` | MaintenanceValidator | Fuzzy match against known terms dataset | difflib (stdlib) |
-| `maintenance/hints.py` | — | Whisper hints for maintenance terms (from JSON) | — |
-| `maintenance/filters.py` | — | Stopwords for maintenance context (from JSON) | — |
 
 ### Orchestration
 
@@ -82,7 +76,6 @@ All validators follow the `Validator` protocol: `validate(candidates) -> list[di
 Two-layer system: reference (git-tracked) + community (user-editable, gitignored). Merged at load time.
 
 - `datasets/reference/games/` — `known_titles.json`, `stopwords.json`, `consoles.json`, `hints.json`, `aliases.json`
-- `datasets/reference/maintenance/` — `known_terms.json`, `stopwords.json`, `hints.json`, `aliases.json`
 - `datasets/community/` — same structure, overrides/extends reference datasets
 
 Filters and hints modules load via `datasets.py` with inline fallback if files are missing.
@@ -95,7 +88,7 @@ User-editable TOML file at the project root.
 - `[whisper]` — `model_size` (tiny/base/small/medium/large), `device` (cpu/cuda), `compute_type` (int8/float16/float32)
 - `[gliner]` — `model_name` (HuggingFace ID), `device` (cpu/cuda)
 
-**Pipeline calibration** — per-pipeline sections (`[games]`, `[maintenance]`):
+**Pipeline calibration** — pipeline section (`[games]`):
 - `threshold` — override confidence score (0.0-1.0)
 - `blocklist` — terms to reject (false positives)
 - `aliases` — quick overrides (stable aliases go in `datasets/reference/*/aliases.json`)

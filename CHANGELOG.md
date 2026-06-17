@@ -33,20 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CLAUDE.md` updated with data lake architecture documentation
 - `docs/roadmap.md` reordered to reflect actual implementation sequence
 
+### Removed
+
+- **Removed maintenance pipeline** — project refocused on retro game identification only. All maintenance detector, validator, hints, filters, and dataset files deleted. See `docs/maintenance-removal-plan.md`.
+
 ## [0.2.0] — 2026-03-16
 
 ### Added
 
 - **Validation layer** — post-detection fuzzy matching against known datasets
   - `games/validator.py` — normalize game names against `known_titles.json`
-  - `maintenance/validator.py` — normalize terms against `known_terms.json`
   - `[?]` marker for unvalidated/uncertain entities in CLI output
 - **Configurable ML models** with GPU support
   - Whisper: `model_size` (tiny/base/small/medium/large), `device` (cpu/cuda), `compute_type` (int8/float16/float32)
   - GLiNER: `model_name` (HuggingFace ID), `device` (cpu/cuda)
 - **JSON datasets** — user-editable reference data extracted from code
   - Games: `known_titles.json`, `stopwords.json`, `consoles.json`, `hints.json`, `aliases.json`
-  - Maintenance: `known_terms.json`, `stopwords.json`, `hints.json`, `aliases.json`
 - `datasets.py` module — load JSON datasets with LRU cache
 - `validated` column in SQLite detections table
 - HuggingFace token support via `.env` file
@@ -66,13 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Core detection pipeline** — download audio → transcribe → detect entities → display results
-- `analyze` command — single video analysis with `-p games/maintenance/all`
+- `analyze` command — single video analysis
 - `channel` command — batch analyze N videos from a YouTube channel
 - `list` command — browse channel videos/lives without analyzing
 - `search` command — query detected entities across all analyzed videos
 - `history` command — list previously analyzed videos
 - **Games pipeline** — zero-shot NER for retro game titles via GLiNER
-- **Maintenance pipeline** — NER for tools, components, and mods via GLiNER
 - Whisper hints — domain-specific vocabulary for improved transcription accuracy
 - Disk caching — audio files and transcription segments
 - SQLite persistence — video metadata and detection results

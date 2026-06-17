@@ -53,12 +53,6 @@ The `[?]` marker means the entity was not found in the known titles dataset — 
 # Default: detect video games
 retro-game-indexer analyze "https://youtube.com/watch?v=..."
 
-# Detect maintenance items (tools, components, mods)
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p maintenance
-
-# Run both pipelines at once
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p all
-
 # Show timestamped YouTube links (click to jump to the moment)
 retro-game-indexer analyze "https://youtube.com/watch?v=..." -l
 
@@ -68,7 +62,7 @@ retro-game-indexer analyze "https://youtube.com/watch?v=..." --no-cache
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-p, --pipeline` | games | `games`, `maintenance`, or `all` |
+| `-p, --pipeline` | games | `games` (kept for compatibility) |
 | `-l, --links` | off | Append timestamped YouTube links |
 | `--hint` | (auto) | Custom Whisper transcription hint |
 | `--config` | config.toml | Path to configuration file |
@@ -120,9 +114,6 @@ Batch-analyzes N videos from a channel, then shows an aggregated report.
 # Analyze 3 latest videos for games
 retro-game-indexer channel "@RetroGameCorps" -n 3
 
-# Analyze 5 latest lives for maintenance items
-retro-game-indexer channel "@RetroGameCorps" -n 5 -t live -p maintenance
-
 # Analyze 10 videos with timestamped links
 retro-game-indexer channel "@RetroGameCorps" -n 10 -l
 ```
@@ -132,7 +123,7 @@ retro-game-indexer channel "@RetroGameCorps" -n 10 -l
 | `-n, --max-videos` | 5 | Number of videos to analyze |
 | `-s, --sort` | newest | `newest` or `oldest` |
 | `-t, --type` | all | `regular`, `live`, or `all` |
-| `-p, --pipeline` | games | `games`, `maintenance`, or `all` |
+| `-p, --pipeline` | games | `games` (kept for compatibility) |
 | `-l, --links` | off | Append timestamped YouTube links |
 | `--hint` | (auto) | Custom Whisper transcription hint |
 | `--config` | config.toml | Path to configuration file |
@@ -142,14 +133,11 @@ retro-game-indexer channel "@RetroGameCorps" -n 10 -l
 
 ### `search` — Search across all analyzed videos
 
-Query the database for a game or term detected in previous analyses.
+Query the database for a game detected in previous analyses.
 
 ```bash
 # Find all videos that mention Castlevania
 retro-game-indexer search "Castlevania"
-
-# Search for a maintenance term
-retro-game-indexer search "capacitor"
 
 # Partial match works (case-insensitive)
 retro-game-indexer search "mario"
@@ -186,19 +174,15 @@ Example output:
                https://www.youtube.com/watch?v=abc123
   [2024-11-10] SNES Hidden Gems  (45:30)  — 1 runs, 8 detections
                https://www.youtube.com/watch?v=def456
-  [2024-11-05] Console Repair Stream  (2:10:00) [LIVE]  — 1 runs, 22 detections
-               https://www.youtube.com/watch?v=ghi789
 ```
 
 ---
 
-## Pipelines
+## Pipeline
 
 | Pipeline | What it detects | Example entities |
 |----------|----------------|-----------------|
 | `games` | Video game titles | Super Mario World, Castlevania, Mega Man X |
-| `maintenance` | Repair tools, components, hardware mods | ferro de solda, capacitor, mod RGB |
-| `all` | Both pipelines combined | — |
 
 ---
 
@@ -216,22 +200,20 @@ GLiNER → candidate entities → Validator (fuzzy match) → confirmed entities
 
 ### Customizing datasets
 
-Edit the JSON files in `data/datasets/` to improve validation:
+Edit the JSON files in `datasets/reference/games/` to improve validation:
 
 ```bash
 # Add a game that the validator doesn't recognize
-# Edit data/datasets/games/known_titles.json and add the title to the list
+# Edit datasets/reference/games/known_titles.json and add the title to the list
 ```
 
 | File | Purpose |
 |------|---------|
-| `data/datasets/games/known_titles.json` | Known game titles for validation |
-| `data/datasets/games/stopwords.json` | Words to always reject |
-| `data/datasets/games/consoles.json` | Console names to filter out |
-| `data/datasets/games/hints.json` | Whisper transcription hints |
-| `data/datasets/maintenance/known_terms.json` | Known tools and components |
-| `data/datasets/maintenance/stopwords.json` | Words to always reject |
-| `data/datasets/maintenance/hints.json` | Whisper transcription hints |
+| `datasets/reference/games/known_titles.json` | Known game titles for validation |
+| `datasets/reference/games/stopwords.json` | Words to always reject |
+| `datasets/reference/games/consoles.json` | Console names to filter out |
+| `datasets/reference/games/hints.json` | Whisper transcription hints |
+| `datasets/reference/games/aliases.json` | Persistent alias mappings |
 
 ---
 
@@ -242,14 +224,14 @@ Audio files and transcriptions are cached automatically in `.cache/`:
 ```
 .cache/
   audio/{video_id}.webm           # downloaded audio
-  transcripts/{video_id}_*.json   # transcription segments (hint-aware)
   retro_game_indexer.db           # SQLite database with all results
 ```
 
-- **Second runs are fast**: cached audio + cached transcript = only detection runs
+Transcripts and detection results are persisted to the data lake in `data/`.
+
+- **Second runs are fast**: cached audio + data lake transcript = only detection runs
 - Detection is **never cached** — freely tweak `config.toml` and re-run
 - Use `--no-cache` to force a full reprocess
-- The transcript cache key includes the Whisper hint, so different pipelines produce separate cache entries
 
 ---
 
@@ -282,13 +264,6 @@ blocklist = ["React", "Big Brother", "King"]
 [games.aliases]
 "Pico Stech" = "PicoStation"
 "Resident 3" = "Resident Evil 3"
-
-[maintenance]
-threshold = 0.6
-blocklist = []
-
-[maintenance.aliases]
-"ferro solda" = "ferro de solda"
 ```
 
 See [calibration.md](calibration.md) for a detailed calibration guide.
@@ -313,7 +288,7 @@ See [calibration.md](calibration.md) for a detailed calibration guide.
    retro-game-indexer analyze "https://youtube.com/watch?v=..." -l
    ```
 
-4. **Expand datasets** — add new game titles or maintenance terms to `data/datasets/` to improve validation
+4. **Expand datasets** — add new game titles to `datasets/reference/games/` to improve validation
 
 5. **Batch analyze** — once calibration looks good, process multiple videos
    ```bash
@@ -357,8 +332,8 @@ The token is loaded automatically on startup via `python-dotenv`.
 | Models download on first run | Normal — Whisper (~150 MB) and GLiNER (~350 MB) are cached after first download |
 | Slow transcription | Use `tiny` model in `config.toml` for speed, or `medium`/`large` for accuracy |
 | Too many false positives | Add terms to `blocklist` in `config.toml` — see [calibration.md](calibration.md) |
-| Misspelled detections | Add entries to `[games.aliases]` or `[maintenance.aliases]` in `config.toml` |
-| Unvalidated entities `[?]` | Add the title to `data/datasets/games/known_titles.json` |
+| Misspelled detections | Add entries to `[games.aliases]` in `config.toml` |
+| Unvalidated entities `[?]` | Add the title to `datasets/reference/games/known_titles.json` |
 | YouTube URL not recognized | Supported formats: `/watch?v=`, `/live/`, `/embed/`, `/v/`, `youtu.be/`, `shorts/` |
 | Cache issues | Use `--no-cache` to force reprocessing, or delete `.cache/` to start fresh |
 | GPU not detected | Set `device = "cuda"` in `config.toml` and ensure CUDA drivers are installed |

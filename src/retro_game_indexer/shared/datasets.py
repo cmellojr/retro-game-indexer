@@ -21,21 +21,17 @@ def _load_json(path: Path) -> list | dict:
 def load_dataset(pipeline: str, name: str) -> list | dict:
     """Load a JSON dataset, merging reference and community layers.
 
-    Reference datasets (checked into git) are loaded first.
-    Community datasets (user-editable, gitignored) are merged on top:
-    - Lists: community items appended (deduplicated)
-    - Dicts: community keys override reference keys
-
     Args:
-        pipeline: Pipeline name ("games" or "maintenance").
-        name: Dataset filename without extension
-              ("known_titles", "stopwords", "consoles", "hints", "aliases").
+        pipeline: Pipeline name (e.g. "games").
+        name: Dataset filename without extension.
 
     Returns:
         Merged dataset (list or dict), or empty list if missing.
     """
-    ref_data = _load_json(_REFERENCE_DIR / pipeline / f"{name}.json")
-    comm_data = _load_json(_COMMUNITY_DIR / pipeline / f"{name}.json")
+    ref_path = _REFERENCE_DIR / pipeline / f"{name}.json"
+    comm_path = _COMMUNITY_DIR / pipeline / f"{name}.json"
+    ref_data = _load_json(ref_path)
+    comm_data = _load_json(comm_path)
 
     if not comm_data:
         return ref_data
