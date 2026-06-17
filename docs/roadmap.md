@@ -12,7 +12,6 @@ Evolution plan for retro-game-indexer, from current audio-based detection toward
 - [x] Detect game names with GLiNER zero-shot NER
 - [x] CLI with `analyze`, `list`, `channel`, `search`, `history` commands
 - [x] Whisper hints for domain vocabulary
-- [x] Maintenance pipeline (tools, components, mods)
 - [x] `config.toml` calibration — threshold, blocklist, aliases
 - [x] Timestamped YouTube links (`-l` flag)
 - [x] Caching system (audio + transcripts)
@@ -25,13 +24,14 @@ Evolution plan for retro-game-indexer, from current audio-based detection toward
 - [x] HuggingFace token support (.env)
 - [x] Case-sensitivity fix in alias lookup
 
-### v0.3.0 — Data-First Architecture *(in progress)*
+### v0.3.0 — Data-First Architecture
 - [x] Bronze/silver/gold data lake (medallion pattern)
 - [x] Two-layer datasets: `datasets/reference/` + `datasets/community/`
 - [x] Run ID system for detection versioning
 - [x] `rebuild` command — reconstruct SQLite from data lake
 - [x] Bronze fallback for transcript cache
-- [ ] Branching strategy and CONTRIBUTING.md
+- [x] Branching strategy and CONTRIBUTING.md
+- [x] Refocused on single-purpose retro game indexing (removed maintenance pipeline)
 
 ---
 

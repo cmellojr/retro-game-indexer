@@ -33,9 +33,6 @@ Controls how confident the model must be to report a detection.
 ```toml
 [games]
 threshold = 0.85    # stricter: fewer results, less noise
-
-[maintenance]
-threshold = 0.5     # looser: more results, more noise
 ```
 
 | Value | Effect |
@@ -77,10 +74,6 @@ Maps misspelled or variant transcriptions to the correct canonical name. Case-in
 "Pico Steixo" = "PicoStation"
 "pico-stech" = "PicoStation"
 "Resident 3" = "Resident Evil 3"
-
-[maintenance.aliases]
-"ferro solda" = "ferro de solda"
-"multimetro" = "multímetro"
 ```
 
 When an alias matches, the canonical name is used for both display and deduplication. This means "Pico Stech" and "PicoStation" won't appear as separate entries.
@@ -103,12 +96,6 @@ blocklist = [
 "Resident 3" = "Resident Evil 3"
 "Rc3" = "Resident Evil 3"
 "Rc1" = "Resident Evil"
-
-[maintenance]
-threshold = 0.6
-blocklist = []
-
-[maintenance.aliases]
 ```
 
 ## Using a Different Config File
@@ -119,17 +106,15 @@ retro-game-indexer analyze URL --config my-custom-config.toml
 
 ## Datasets
 
-In addition to `config.toml`, you can improve detection accuracy by editing the JSON datasets in `data/datasets/`:
+In addition to `config.toml`, you can improve detection accuracy by editing the JSON datasets in `datasets/reference/games/`:
 
 | File | Purpose |
 |------|---------|
-| `games/known_titles.json` | Known game titles for validation (fuzzy match) |
-| `games/stopwords.json` | Words to always reject |
-| `games/consoles.json` | Console names to filter out |
-| `games/hints.json` | Whisper transcription hints |
-| `maintenance/known_terms.json` | Known tools and components for validation |
-| `maintenance/stopwords.json` | Words to always reject |
-| `maintenance/hints.json` | Whisper transcription hints |
+| `known_titles.json` | Known game titles for validation (fuzzy match) |
+| `stopwords.json` | Words to always reject |
+| `consoles.json` | Console names to filter out |
+| `hints.json` | Whisper transcription hints |
+| `aliases.json` | Persistent alias mappings |
 
 Adding a title to `known_titles.json` helps the validator confirm detections and normalize names. Adding a term to `stopwords.json` rejects it before it reaches the validator.
 
@@ -138,5 +123,5 @@ Adding a title to `known_titles.json` helps the validator confirm detections and
 - Start with the default threshold, then increase if you see too much noise
 - After the first run, re-runs use cache — only detection runs again (~15s)
 - The blocklist and aliases are applied **after** model inference, so they don't affect what the model sees
-- Whisper hints (loaded from `data/datasets/*/hints.json`) affect transcription quality; blocklist/aliases affect post-processing
-- Entities marked with `[?]` in the output were not found in the known datasets — add them to `known_titles.json` or `known_terms.json` if they are valid
+- Whisper hints (loaded from `datasets/reference/games/hints.json`) affect transcription quality; blocklist/aliases affect post-processing
+- Entities marked with `[?]` in the output were not found in the known datasets — add them to `known_titles.json` if they are valid

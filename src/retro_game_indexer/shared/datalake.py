@@ -48,16 +48,13 @@ def _read_json(path: Path) -> dict | None:
         return json.load(f)
 
 
-# ── Run ID ─────────────────────────────────────────────────────────
-
-
 def generate_run_id(pipeline: str, model_name: str) -> str:
     """Generate a unique run ID.
 
     Format: ``YYYYMMDD_HHMMSS_{pipeline}_{model_hash8}``
 
     Args:
-        pipeline: Pipeline name ("games" or "maintenance").
+        pipeline: Pipeline name (e.g. "games").
         model_name: Model identifier (e.g. "urchade/gliner_base").
 
     Returns:
@@ -66,9 +63,6 @@ def generate_run_id(pipeline: str, model_name: str) -> str:
     now = datetime.now(timezone.utc)
     model_hash = hashlib.sha256(model_name.encode()).hexdigest()[:8]
     return f"{now.strftime('%Y%m%d_%H%M%S')}_{pipeline}_{model_hash}"
-
-
-# ── Bronze layer (immutable, append-only) ──────────────────────────
 
 
 def save_bronze_metadata(
@@ -178,9 +172,6 @@ def get_bronze_metadata(video_id: str) -> dict | None:
     return _read_json(_BRONZE_DIR / video_id / "metadata.json")
 
 
-# ── Silver layer (versioned AI outputs) ────────────────────────────
-
-
 def save_silver_detections(
     video_id: str,
     run_id: str,
@@ -247,9 +238,6 @@ def get_silver_run(video_id: str, run_id: str) -> dict | None:
         Full run dict, or None if not found.
     """
     return _read_json(_SILVER_DIR / video_id / f"{run_id}.json")
-
-
-# ── Gold layer (consolidated knowledge) ────────────────────────────
 
 
 def save_gold_entities(
@@ -323,9 +311,6 @@ def build_gold_from_silver(video_id: str) -> dict[str, list[dict]]:
     return entities
 
 
-# ── Lake-wide operations ───────────────────────────────────────────
-
-
 def list_all_videos() -> list[str]:
     """List all video IDs that have bronze data.
 
@@ -343,13 +328,9 @@ def list_all_videos() -> list[str]:
 def rebuild_db_from_lake() -> int:
     """Rebuild the SQLite database from bronze + silver files.
 
-    Reads all bronze metadata and silver detection files,
-    then repopulates the videos, runs, and detections tables.
-
     Returns:
         Number of videos processed.
     """
-    # Import here to avoid circular imports
     from retro_game_indexer.shared.db import (
         save_detections,
         save_run,

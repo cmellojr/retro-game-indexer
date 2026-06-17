@@ -1,6 +1,5 @@
 """Transcribe audio to text segments using faster-whisper."""
 
-import sys
 from collections.abc import Callable
 from pathlib import Path
 

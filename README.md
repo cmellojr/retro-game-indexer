@@ -2,10 +2,9 @@
 
 Detect and index retro gaming content from YouTube videos using speech-to-text and named entity recognition.
 
-## Pipelines
+## Pipeline
 
 - **games** — detect video game names mentioned in videos
-- **maintenance** — detect repair tools, electronic components, and hardware modifications
 
 ## Stack
 
@@ -35,8 +34,6 @@ HF_TOKEN=hf_xxxxx           # HuggingFace token (avoids rate limiting)
 
 ```bash
 retro-game-indexer analyze "https://youtube.com/watch?v=..."
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p maintenance
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p all
 retro-game-indexer analyze "https://youtube.com/watch?v=..." -l          # timestamped links
 retro-game-indexer analyze "https://youtube.com/watch?v=..." --no-cache  # force reprocess
 ```
@@ -53,7 +50,6 @@ retro-game-indexer list "@RetroGameCorps" -s oldest
 
 ```bash
 retro-game-indexer channel "@RetroGameCorps" -n 5
-retro-game-indexer channel "@RetroGameCorps" -n 10 -t live -p maintenance
 retro-game-indexer channel "@RetroGameCorps" -n 5 -l
 ```
 
@@ -61,7 +57,6 @@ retro-game-indexer channel "@RetroGameCorps" -n 5 -l
 
 ```bash
 retro-game-indexer search "Castlevania"      # search across all analyzed videos
-retro-game-indexer search "capacitor"         # partial match, case-insensitive
 retro-game-indexer history                    # list all analyzed videos
 ```
 
@@ -77,7 +72,7 @@ python -m retro_game_indexer search "Mario"
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-p, --pipeline` | games | `games`, `maintenance`, or `all` |
+| `-p, --pipeline` | games | `games` (kept for compatibility) |
 | `-l, --links` | off | Append timestamped YouTube links |
 | `-n, --max-videos` | 5/10 | Number of videos (channel/list) |
 | `-s, --sort` | newest | `newest` or `oldest` |
@@ -88,13 +83,13 @@ python -m retro_game_indexer search "Mario"
 
 ## Validation
 
-After GLiNER detects entities, a validation layer compares each candidate against known datasets (`data/datasets/`):
+After GLiNER detects entities, a validation layer compares each candidate against known datasets (`datasets/reference/games/`):
 
 - **Exact match** → confirmed, name normalized to canonical form
 - **Fuzzy match** (>80% similarity) → confirmed with adjusted confidence
 - **No match** → kept but marked with `[?]` in output
 
-Edit the JSON files in `data/datasets/` to improve validation accuracy.
+Edit the JSON files in `datasets/reference/games/` to improve validation accuracy.
 
 ## Configuration
 
