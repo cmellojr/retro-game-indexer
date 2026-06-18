@@ -1,28 +1,16 @@
 """CLI entry point for retro-game-indexer."""
 
-import os
 import sys
 import tempfile
 import warnings
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-warnings.filterwarnings("ignore", message=".*resume_download.*", category=UserWarning)
-warnings.filterwarnings("ignore", message=".*unauthenticated.*", category=UserWarning)
-
 import typer
+from dotenv import load_dotenv
 
 from retro_game_indexer.pipelines.games.detector import GameDetector
 from retro_game_indexer.pipelines.games.hints import DEFAULT_HINTS as GAME_HINTS
 from retro_game_indexer.pipelines.games.validator import GameValidator
-from retro_game_indexer.pipelines.maintenance.detector import MaintenanceDetector
-from retro_game_indexer.pipelines.maintenance.hints import (
-    DEFAULT_HINTS as MAINTENANCE_HINTS,
-)
-from retro_game_indexer.pipelines.maintenance.validator import MaintenanceValidator
 from retro_game_indexer.shared.audio import download_audio
 from retro_game_indexer.shared.cache import (
     cache_audio,
@@ -34,7 +22,6 @@ from retro_game_indexer.shared.cache import (
 from retro_game_indexer.shared.channel import VideoInfo, list_videos, resolve_channel
 from retro_game_indexer.shared.config import (
     AppConfig,
-    PipelineConfig,
     WhisperConfig,
     load_config,
 )
@@ -55,38 +42,33 @@ from retro_game_indexer.shared.db import (
 )
 from retro_game_indexer.shared.transcriber import transcribe
 
+load_dotenv()
+
+warnings.filterwarnings("ignore", message=".*resume_download.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*unauthenticated.*", category=UserWarning)
+
 app = typer.Typer()
 
 
-def _get_hint(pipeline: str) -> str:
-    """Return the appropriate transcription hint for the pipeline.
-
-    Args:
-        pipeline: Pipeline name ("games", "maintenance", or "all").
+def _get_hint() -> str:
+    """Return the default transcription hint for retro game indexing.
 
     Returns:
         Hint string for Whisper transcription.
     """
-    if pipeline == "games":
-        return GAME_HINTS
-    if pipeline == "maintenance":
-        return MAINTENANCE_HINTS
-    return f"{GAME_HINTS}, {MAINTENANCE_HINTS}"
+    return GAME_HINTS
 
 
-def _merge_aliases(
-    pipeline: str, config_aliases: dict[str, str] | None
-) -> dict[str, str]:
+def _merge_aliases(config_aliases: dict[str, str] | None) -> dict[str, str]:
     """Load aliases from JSON dataset and merge with config.toml overrides.
 
     Args:
-        pipeline: Pipeline name ("games" or "maintenance").
         config_aliases: Aliases from config.toml (override layer).
 
     Returns:
         Merged alias dict (JSON base + config.toml overrides).
     """
-    dataset_aliases = load_dataset(pipeline, "aliases")
+    dataset_aliases = load_dataset("games", "aliases")
     merged: dict[str, str] = (
         {k.lower(): v for k, v in dataset_aliases.items()}
         if isinstance(dataset_aliases, dict)
@@ -98,49 +80,28 @@ def _merge_aliases(
 
 
 def _get_detectors(
-    pipeline: str, config: AppConfig | None = None
+    config: AppConfig | None = None
 ) -> list[tuple[str, object, object]]:
-    """Create detector and validator instances for the selected pipeline.
+    """Create detector and validator instances for the game pipeline.
 
     Args:
-        pipeline: Pipeline name ("games", "maintenance", or "all").
         config: Application configuration from config.toml.
 
     Returns:
-        List of (label, detector, validator) tuples.
+        List containing the (label, detector, validator) tuple.
     """
     config = config or AppConfig()
-    detectors: list[tuple[str, object, object]] = []
-
-    if pipeline in ("games", "all"):
-        cfg = config.games
-        aliases = _merge_aliases("games", cfg.aliases)
-        kwargs: dict = {
-            "blocklist": cfg.blocklist,
-            "aliases": aliases,
-            "model_name": config.gliner.model_name,
-            "device": config.gliner.device,
-        }
-        if cfg.threshold is not None:
-            kwargs["threshold"] = cfg.threshold
-        detectors.append(("games", GameDetector(**kwargs), GameValidator()))
-
-    if pipeline in ("maintenance", "all"):
-        cfg = config.maintenance
-        aliases = _merge_aliases("maintenance", cfg.aliases)
-        kwargs = {
-            "blocklist": cfg.blocklist,
-            "aliases": aliases,
-            "model_name": config.gliner.model_name,
-            "device": config.gliner.device,
-        }
-        if cfg.threshold is not None:
-            kwargs["threshold"] = cfg.threshold
-        detectors.append(
-            ("maintenance", MaintenanceDetector(**kwargs), MaintenanceValidator())
-        )
-
-    return detectors
+    cfg = config.games
+    aliases = _merge_aliases(cfg.aliases)
+    kwargs: dict = {
+        "blocklist": cfg.blocklist,
+        "aliases": aliases,
+        "model_name": config.gliner.model_name,
+        "device": config.gliner.device,
+    }
+    if cfg.threshold is not None:
+        kwargs["threshold"] = cfg.threshold
+    return [("games", GameDetector(**kwargs), GameValidator())]
 
 
 def _analyze_single_video(
@@ -150,23 +111,22 @@ def _analyze_single_video(
     detectors: list[tuple[str, object, object]],
     use_cache: bool = True,
     whisper_config: WhisperConfig | None = None,
-) -> dict[str, list[dict]]:
-    """Analyze one video and return mentions from all detectors.
+) -> list[dict]:
+    """Analyze one video and return mentions.
 
     Args:
         url: YouTube video URL.
         hint: Transcription hint for Whisper.
         tmp_dir: Temporary directory for audio files.
-        detectors: List of (label, detector, validator) tuples.
+        detectors: List containing the (label, detector, validator) tuple.
         use_cache: If True, use disk cache for audio and transcription.
         whisper_config: Whisper model settings (size, device, compute_type).
 
     Returns:
-        Dict mapping pipeline label to list of mention dicts.
+        List of mention dicts.
     """
     video_id = extract_video_id(url)
 
-    # Audio: check cache first
     audio = get_cached_audio(video_id) if use_cache else None
     if audio is not None:
         print("  Using cached audio.")
@@ -176,7 +136,6 @@ def _analyze_single_video(
         if use_cache:
             cache_audio(video_id, audio)
 
-    # Transcription: check cache first
     segments = get_cached_transcript(video_id, hint) if use_cache else None
     if segments is not None:
         print("  Using cached transcript.")
@@ -204,20 +163,15 @@ def _analyze_single_video(
         if use_cache:
             cache_transcript(video_id, hint, segments)
 
-        # Save to bronze layer (immutable)
         save_bronze_transcript(
             video_id, hint, segments, whisper_model=wcfg.model_size,
         )
 
-    # Detection + validation: always runs (depends on config.toml calibration)
-    results: dict[str, list[dict]] = {}
-    for label, detector, validator in detectors:
-        print(f"  Detecting ({label})...")
-        candidates = detector.detect(segments)
-        print(f"  Validating ({label})...")
-        results[label] = validator.validate(candidates)
-
-    return results
+    _, detector, validator = detectors[0]
+    print("  Detecting (games)...")
+    candidates = detector.detect(segments)
+    print("  Validating (games)...")
+    return validator.validate(candidates)
 
 
 def _timestamp_url(video_url: str, seconds: float) -> str:
@@ -228,7 +182,7 @@ def _timestamp_url(video_url: str, seconds: float) -> str:
         seconds: Timestamp in seconds.
 
     Returns:
-        URL with ``&t=`` or ``?t=`` parameter appended.
+        URL with "&t=" or "?t=" parameter appended.
     """
     sep = "&" if "?" in video_url else "?"
     return f"{video_url}{sep}t={int(seconds)}s"
@@ -258,12 +212,8 @@ def _print_mentions(
 def _tab_urls_for_type(channel_url: str, video_type: str) -> list[str]:
     """Return YouTube tab URL(s) to fetch based on the video type filter.
 
-    YouTube separates regular uploads (``/videos``) and live streams
-    (``/streams``) into different tabs.  This helper maps ``-t`` values to
-    the correct tab URL(s).
-
     Args:
-        channel_url: Resolved channel URL (typically ending in ``/videos``).
+        channel_url: Resolved channel URL.
         video_type: One of "regular", "live", or "all".
 
     Returns:
@@ -285,7 +235,7 @@ def _sort_and_trim(
     """Sort merged video lists and trim to max_videos.
 
     Args:
-        videos: List of VideoInfo objects (possibly from multiple tabs).
+        videos: List of VideoInfo objects.
         sort_order: "newest" or "oldest".
         max_videos: Maximum number of videos to keep.
 
@@ -400,7 +350,7 @@ def list_cmd(
 def analyze(
     url: str,
     pipeline: str = typer.Option(
-        "games", "--pipeline", "-p", help="Pipeline: games, maintenance, or all"
+        "games", "--pipeline", "-p", help="Pipeline: games only"
     ),
     hint: str = typer.Option("", help="Custom hint for Whisper (overrides default)"),
     links: bool = typer.Option(
@@ -413,66 +363,65 @@ def analyze(
         False, "--no-cache", help="Skip cache and reprocess from scratch"
     ),
 ) -> None:
-    """Analyze a single YouTube video.
+    """Analyze a single YouTube video for retro game mentions.
 
     Args:
         url: YouTube video URL.
-        pipeline: Detection pipeline to use.
+        pipeline: Detection pipeline (kept for compatibility).
         hint: Custom transcription hint for Whisper.
         links: If True, show timestamped YouTube links.
         config: Path to config.toml for calibration overrides.
         no_cache: If True, skip cache and reprocess from scratch.
     """
-    effective_hint = hint or _get_hint(pipeline)
+    if pipeline != "games":
+        print(f"WARNING: Pipeline '{pipeline}' is no longer supported.")
+        print("Falling back to 'games' pipeline.")
+
+    effective_hint = hint or _get_hint()
     tmp_dir = Path(tempfile.mkdtemp(prefix="rgi_"))
     cfg = load_config(config)
-    detectors = _get_detectors(pipeline, cfg)
+    detectors = _get_detectors(cfg)
 
     results = _analyze_single_video(
         url, effective_hint, tmp_dir, detectors,
         use_cache=not no_cache, whisper_config=cfg.whisper,
     )
 
-    # Persist to data lake and database
     video_id = extract_video_id(url)
     save_bronze_metadata(video_id, url, title=url)
     save_video(video_id, url, title=url)
 
-    gold_entities: dict[str, list[dict]] = {}
-    source_runs: dict[str, str] = {}
-    for label, mentions in results.items():
-        pipeline_cfg = getattr(cfg, label, PipelineConfig())
-        run_id_str = generate_run_id(label, cfg.gliner.model_name)
-        source_runs[label] = run_id_str
+    label = "games"
+    pipeline_cfg = cfg.games
+    run_id_str = generate_run_id(label, cfg.gliner.model_name)
 
-        # Silver layer
-        save_silver_detections(
-            video_id, run_id_str, label, mentions,
-            config_snapshot={
-                "threshold": pipeline_cfg.threshold,
-                "blocklist": sorted(pipeline_cfg.blocklist) if pipeline_cfg.blocklist else [],
-                "aliases": pipeline_cfg.aliases or {},
-                "hint": effective_hint,
-                "gliner_model": cfg.gliner.model_name,
-                "whisper_model": cfg.whisper.model_size,
-            },
-        )
-        gold_entities[label] = [m for m in mentions if m.get("validated", True)]
+    save_silver_detections(
+        video_id, run_id_str, label, results,
+        config_snapshot={
+            "threshold": pipeline_cfg.threshold,
+            "blocklist": sorted(pipeline_cfg.blocklist) if pipeline_cfg.blocklist else [],
+            "aliases": pipeline_cfg.aliases or {},
+            "hint": effective_hint,
+            "gliner_model": cfg.gliner.model_name,
+            "whisper_model": cfg.whisper.model_size,
+        },
+    )
 
-        # SQLite (backward compat)
-        run_id_int = save_run(
-            video_id, label, pipeline_cfg.threshold,
-            pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
-            run_id=run_id_str,
-        )
-        save_detections(run_id_int, mentions)
+    gold_mentions = [m for m in results if m.get("validated", True)]
+    save_gold_entities(
+        video_id, {"games": gold_mentions}, url=url, title=url,
+        source_runs={"games": run_id_str},
+    )
 
-    # Gold layer
-    save_gold_entities(video_id, gold_entities, url=url, title=url, source_runs=source_runs)
+    run_id_int = save_run(
+        video_id, label, pipeline_cfg.threshold,
+        pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
+        run_id=run_id_str,
+    )
+    save_detections(run_id_int, results)
 
-    for label, mentions in results.items():
-        print(f"\n[{label.upper()}] {len(mentions)} items found:\n")
-        _print_mentions(mentions, video_url=url, links=links)
+    print(f"\n[GAMES] {len(results)} items found:\n")
+    _print_mentions(results, video_url=url, links=links)
 
 
 @app.command()
@@ -486,7 +435,7 @@ def channel(
         "all", "--type", "-t", help="regular, live, or all"
     ),
     pipeline: str = typer.Option(
-        "games", "--pipeline", "-p", help="Pipeline: games, maintenance, or all"
+        "games", "--pipeline", "-p", help="Pipeline: games only"
     ),
     hint: str = typer.Option("", help="Custom hint for Whisper (overrides default)"),
     links: bool = typer.Option(
@@ -511,13 +460,17 @@ def channel(
         max_videos: Maximum number of videos to analyze.
         sort: Sort order, "newest" or "oldest".
         video_type: Filter by "regular", "live", or "all".
-        pipeline: Detection pipeline to use.
+        pipeline: Detection pipeline (kept for compatibility).
         hint: Custom transcription hint for Whisper.
         links: If True, show timestamped YouTube links.
         config: Path to config.toml for calibration overrides.
         no_cache: If True, skip cache and reprocess from scratch.
     """
-    effective_hint = hint or _get_hint(pipeline)
+    if pipeline != "games":
+        print(f"WARNING: Pipeline '{pipeline}' is no longer supported.")
+        print("Falling back to 'games' pipeline.")
+
+    effective_hint = hint or _get_hint()
     videos = _fetch_videos(name_or_url, video_type, max_videos, sort)
 
     if not videos:
@@ -531,7 +484,7 @@ def channel(
 
     tmp_root = Path(tempfile.mkdtemp(prefix="rgi_"))
     cfg = load_config(config)
-    detectors = _get_detectors(pipeline, cfg)
+    detectors = _get_detectors(cfg)
     all_results: list[dict] = []
 
     for i, video in enumerate(videos, 1):
@@ -544,7 +497,6 @@ def channel(
                 use_cache=not no_cache, whisper_config=cfg.whisper,
             )
 
-            # Persist to data lake and database
             vid = extract_video_id(video.url)
             save_bronze_metadata(
                 vid, video.url, video.title,
@@ -555,82 +507,69 @@ def channel(
                 video.upload_date, video.duration, video.live_status,
             )
 
-            gold_entities: dict[str, list[dict]] = {}
-            source_runs: dict[str, str] = {}
-            for label, mentions in results.items():
-                pipeline_cfg = getattr(cfg, label, PipelineConfig())
-                run_id_str = generate_run_id(label, cfg.gliner.model_name)
-                source_runs[label] = run_id_str
+            label = "games"
+            pipeline_cfg = cfg.games
+            run_id_str = generate_run_id(label, cfg.gliner.model_name)
 
-                save_silver_detections(
-                    vid, run_id_str, label, mentions,
-                    config_snapshot={
-                        "threshold": pipeline_cfg.threshold,
-                        "blocklist": sorted(pipeline_cfg.blocklist) if pipeline_cfg.blocklist else [],
-                        "aliases": pipeline_cfg.aliases or {},
-                        "hint": effective_hint,
-                        "gliner_model": cfg.gliner.model_name,
-                        "whisper_model": cfg.whisper.model_size,
-                    },
-                )
-                gold_entities[label] = [m for m in mentions if m.get("validated", True)]
-
-                run_id_int = save_run(
-                    vid, label, pipeline_cfg.threshold,
-                    pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
-                    run_id=run_id_str,
-                )
-                save_detections(run_id_int, mentions)
-
-            save_gold_entities(
-                vid, gold_entities, url=video.url, title=video.title,
-                source_runs=source_runs,
+            save_silver_detections(
+                vid, run_id_str, label, results,
+                config_snapshot={
+                    "threshold": pipeline_cfg.threshold,
+                    "blocklist": sorted(pipeline_cfg.blocklist) if pipeline_cfg.blocklist else [],
+                    "aliases": pipeline_cfg.aliases or {},
+                    "hint": effective_hint,
+                    "gliner_model": cfg.gliner.model_name,
+                    "whisper_model": cfg.whisper.model_size,
+                },
             )
 
-            total = sum(len(m) for m in results.values())
-            print(f"  Found {total} items.")
+            gold_mentions = [m for m in results if m.get("validated", True)]
+            save_gold_entities(
+                vid, {"games": gold_mentions}, url=video.url,
+                title=video.title, source_runs={"games": run_id_str},
+            )
+
+            run_id_int = save_run(
+                vid, label, pipeline_cfg.threshold,
+                pipeline_cfg.blocklist, pipeline_cfg.aliases, effective_hint,
+                run_id=run_id_str,
+            )
+            save_detections(run_id_int, results)
+
+            print(f"  Found {len(results)} items.")
             all_results.append({"video": video, "results": results})
         except Exception as exc:
             print(f"  ERROR: Skipping - {exc}")
-            all_results.append(
-                {"video": video, "results": {l: [] for l, _, _ in detectors}}
-            )
+            all_results.append({"video": video, "results": []})
 
-    # Final report
     print("\n" + "=" * 50)
     print("RESULTS")
     print("=" * 50)
 
-    unique_names: dict[str, set[str]] = {l: set() for l, _, _ in detectors}
+    unique_names: set[str] = set()
 
     for result in all_results:
         video = result["video"]
-        results = result["results"]
+        mentions = result["results"]
         print(f"\n--- {video.title} ---")
-        has_any = False
-        for label, mentions in results.items():
-            if mentions:
-                has_any = True
-                print(f"  [{label.upper()}]")
-                _print_mentions(mentions, video_url=video.url, links=links)
-                unique_names[label].update(m["name"] for m in mentions)
-        if not has_any:
+        if mentions:
+            _print_mentions(mentions, video_url=video.url, links=links)
+            unique_names.update(m["name"] for m in mentions)
+        else:
             print("  No items detected.")
 
     print()
-    for label, names in unique_names.items():
-        print(f"Total [{label}]: {len(names)} unique items across {len(videos)} videos.")
+    print(f"Total unique games: {len(unique_names)} across {len(videos)} videos.")
 
 
 @app.command()
 def search(
     name: str = typer.Argument(help="Entity name to search for"),
 ) -> None:
-    """Search for a game or term across all analyzed videos.
+    """Search for a retro game across all analyzed videos.
 
-    Examples:
+    Example:
         retro-game-indexer search "Castlevania"
-        retro-game-indexer search "capacitor"
 
     Args:
         name: Entity name (partial match, case-insensitive).
@@ -660,7 +599,7 @@ def search(
 def history() -> None:
     """List all previously analyzed videos with detection counts.
 
-    Examples:
+    Example:
         retro-game-indexer history
     """
     rows = list_processed_videos()

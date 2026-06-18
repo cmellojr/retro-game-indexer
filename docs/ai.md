@@ -37,7 +37,7 @@ Whisper is an automatic speech recognition (ASR) model developed by OpenAI. It c
 audio.mp3 → Whisper (base, INT8, CPU) → [{"text": "...", "start": 1.5}, ...]
 ```
 
-The `initial_prompt` parameter receives domain-specific hints (game titles or maintenance terms) to improve transcription accuracy for technical vocabulary.
+The `initial_prompt` parameter receives domain-specific hints (game titles) to improve transcription accuracy for technical vocabulary.
 
 ---
 
@@ -67,18 +67,17 @@ labels = ["video game"]
 
 - **Span-based extraction**: GLiNER scores every possible text span (contiguous substring) against each label. The spans with scores above the confidence threshold are returned as entities. This is different from token classification approaches (like BERT-NER) that label individual tokens.
 
-- **Confidence threshold**: a cutoff score (0.0-1.0) below which detections are discarded. Higher threshold = fewer results but higher precision. Lower threshold = more results but more noise. Default: 0.7 for games, 0.6 for maintenance.
+- **Confidence threshold**: a cutoff score (0.0-1.0) below which detections are discarded. Higher threshold = fewer results but higher precision. Lower threshold = more results but more noise. Default: 0.7.
 
 - **Bi-encoder architecture**: GLiNER encodes entity labels and text spans separately, then computes similarity. This allows efficient inference with arbitrary label sets without retraining.
 
 ### How it's used in this project
 
-Two detection pipelines use the same GLiNER model with different labels:
+The detection pipeline uses the GLiNER model with the following label:
 
 | Pipeline | Labels | Threshold |
 |----------|--------|-----------|
 | Games | `"video game"` | 0.7 |
-| Maintenance | `"repair tool"`, `"electronic component"`, `"hardware modification"` | 0.6 |
 
 ```
 transcribed segments → GLiNER (zero-shot) → [{"name": "Resident Evil", "category": "video game", "timestamp": 448.6, "confidence": 0.95}]
@@ -90,7 +89,7 @@ Post-processing applies:
 3. **User blocklist** — removes terms from `config.toml`
 4. **Alias normalization** — maps transcription variants to canonical names
 5. **Deduplication** — keeps only the first occurrence of each entity
-6. **Validation** — fuzzy-matches candidates against known datasets (`data/datasets/`), normalizes names to canonical form, and marks unmatched entities with `[?]`
+6. **Validation** — fuzzy-matches candidates against known datasets (`datasets/reference/games/`), normalizes names to canonical form, and marks unmatched entities with `[?]`
 
 ---
 
@@ -176,7 +175,6 @@ If the project evolves to support **natural language queries over indexed data**
 
 ```
 "Which videos mention Castlevania and Mega Man?"
-"What maintenance tools does the channel recommend most?"
 ```
 
 In that scenario:

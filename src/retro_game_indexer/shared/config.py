@@ -56,20 +56,17 @@ class AppConfig:
         whisper: Whisper transcription model settings.
         gliner: GLiNER NER model settings.
         games: Games pipeline calibration overrides.
-        maintenance: Maintenance pipeline calibration overrides.
     """
 
     whisper: WhisperConfig = field(default_factory=WhisperConfig)
     gliner: GlinerConfig = field(default_factory=GlinerConfig)
     games: PipelineConfig = field(default_factory=PipelineConfig)
-    maintenance: PipelineConfig = field(default_factory=PipelineConfig)
 
 
 def load_config(path: Path | str = "config.toml") -> AppConfig:
     """Load application config from a TOML file.
 
-    If the file does not exist, returns default config so the
-    application behaves exactly as before.
+    If the file does not exist, returns default config.
 
     Args:
         path: Path to the TOML configuration file.
@@ -86,7 +83,6 @@ def load_config(path: Path | str = "config.toml") -> AppConfig:
     with open(filepath, "rb") as f:
         raw = tomllib.load(f)
 
-    # Model configs
     whisper_raw = raw.get("whisper", {})
     if whisper_raw:
         config.whisper = WhisperConfig(
@@ -102,24 +98,16 @@ def load_config(path: Path | str = "config.toml") -> AppConfig:
             device=gliner_raw.get("device", "cpu"),
         )
 
-    # Pipeline configs
-    for name in ("games", "maintenance"):
-        section = raw.get(name, {})
-        if not section:
-            continue
-
+    section = raw.get("games", {})
+    if section:
         threshold = section.get("threshold")
         blocklist = {t.lower() for t in section.get("blocklist", [])}
         aliases = {k.lower(): v for k, v in section.get("aliases", {}).items()}
 
-        setattr(
-            config,
-            name,
-            PipelineConfig(
-                threshold=threshold,
-                blocklist=blocklist,
-                aliases=aliases,
-            ),
+        config.games = PipelineConfig(
+            threshold=threshold,
+            blocklist=blocklist,
+            aliases=aliases,
         )
 
     return config

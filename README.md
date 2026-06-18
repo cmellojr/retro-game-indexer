@@ -1,28 +1,25 @@
 # retro-game-indexer
 
-Detect and index retro gaming and maintenance content from YouTube videos using
-local speech-to-text and zero-shot named entity recognition.
+Detect and index retro gaming content from YouTube videos using local
+speech-to-text and zero-shot named entity recognition.
 
 The current pipeline is audio-based: download audio, transcribe with Whisper,
-detect entities with GLiNER, validate them against local datasets, then persist
-results to a JSON data lake and SQLite.
+detect game names with GLiNER, validate them against local datasets, then
+persist results to a JSON data lake and SQLite.
 
 ## Current status
 
 - Python 3.12+
 - Version: `0.3.0`
 - Default models: `faster-whisper` base with INT8, `urchade/gliner_base`
-- Pipelines: `games`, `maintenance`, and `all`
+- Pipeline: `games` (games pipeline only)
 - Persistence: bronze/silver/gold data lake plus rebuildable SQLite index
-- Datasets: `datasets/reference/` with optional `datasets/community/` overrides
+- Datasets: `datasets/reference/games/` with optional
+  `datasets/community/games/` overrides
 
-## Pipelines
+## Pipeline
 
-| Pipeline | What it detects | Example labels |
-|---|---|---|
-| `games` | Retro game titles mentioned in speech | `video game` |
-| `maintenance` | Repair tools, electronic components, and hardware mods | `repair tool`, `electronic component`, `hardware modification` |
-| `all` | Runs both pipelines in the same analysis | — |
+- **games** — retro game titles mentioned in speech
 
 ## Stack
 
@@ -64,8 +61,6 @@ HuggingFace rate limiting during model downloads.
 
 ```bash
 retro-game-indexer analyze "https://youtube.com/watch?v=..."
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p maintenance
-retro-game-indexer analyze "https://youtube.com/watch?v=..." -p all
 retro-game-indexer analyze "https://youtube.com/watch?v=..." -l
 retro-game-indexer analyze "https://youtube.com/watch?v=..." --no-cache
 ```
@@ -92,7 +87,6 @@ live URLs.
 
 ```bash
 retro-game-indexer channel "@RetroGameCorps" -n 5
-retro-game-indexer channel "@RetroGameCorps" -n 10 -t live -p maintenance
 retro-game-indexer channel "@RetroGameCorps" -n 5 -l
 ```
 
@@ -103,7 +97,6 @@ results, then prints an aggregated report.
 
 ```bash
 retro-game-indexer search "Castlevania"
-retro-game-indexer search "capacitor"
 retro-game-indexer history
 ```
 
@@ -131,7 +124,6 @@ python -m retro_game_indexer search "Mario"
 
 | Flag | Default | Applies to | Description |
 |---|---:|---|---|
-| `-p, --pipeline` | `games` | `analyze`, `channel` | `games`, `maintenance`, or `all` |
 | `-l, --links` | off | `analyze`, `channel` | Append timestamped YouTube links |
 | `-n, --max-videos` | 10 / 5 | `list`, `channel` | Maximum number of videos |
 | `-s, --sort` | `newest` | `list`, `channel` | `newest` or `oldest` |
@@ -139,6 +131,8 @@ python -m retro_game_indexer search "Mario"
 | `--hint` | auto | `analyze`, `channel` | Custom Whisper hint |
 | `--config` | `config.toml` | most commands | Configuration file path |
 | `--no-cache` | off | `analyze`, `channel` | Reprocess audio and transcription |
+
+The `-p, --pipeline` flag defaults to `games` and has no other value.
 
 ## Data lake
 
@@ -166,30 +160,19 @@ Datasets are loaded from two layers:
 
 | Layer | Path | Purpose |
 |---|---|---|
-| Reference | `datasets/reference/` | Git-tracked default datasets |
-| Community | `datasets/community/` | User-editable overrides, gitignored |
+| Reference | `datasets/reference/games/` | Git-tracked default datasets |
+| Community | `datasets/community/games/` | User-editable overrides, gitignored |
 
 Merging rules:
 
 - Lists are appended and deduplicated.
 - Dict keys from community override reference keys.
 
-Games datasets:
-
 | File | Purpose |
 |---|---|
 | `known_titles.json` | Known game titles for validation |
 | `stopwords.json` | Words to always reject |
 | `consoles.json` | Console names to filter out |
-| `hints.json` | Whisper transcription hints |
-| `aliases.json` | Variant spelling normalization |
-
-Maintenance datasets:
-
-| File | Purpose |
-|---|---|
-| `known_terms.json` | Known tools, components, and mods |
-| `stopwords.json` | Words to always reject |
 | `hints.json` | Whisper transcription hints |
 | `aliases.json` | Variant spelling normalization |
 
@@ -229,13 +212,6 @@ blocklist = ["React", "Big Brother"]
 
 [games.aliases]
 "Pico Stech" = "PicoStation"
-
-[maintenance]
-threshold = 0.6
-blocklist = []
-
-[maintenance.aliases]
-"ferro solda" = "ferro de solda"
 ```
 
 Pipeline thresholds are detection cutoffs before validation. Blocklists are

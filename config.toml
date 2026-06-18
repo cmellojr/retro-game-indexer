@@ -25,16 +25,7 @@
 blocklist = []
 
 # Map transcription variants to the correct name.
-# Stable aliases go in data/datasets/games/aliases.json.
+# Stable aliases go in datasets/reference/games/aliases.json.
 # Use this section for quick overrides during calibration.
 # Example: { "Pico Stech" = "PicoStation" }
 [games.aliases]
-
-
-[maintenance]
-# Minimum confidence score (0.0-1.0). Default: 0.6
-# threshold = 0.7
-
-blocklist = []
-
-[maintenance.aliases]

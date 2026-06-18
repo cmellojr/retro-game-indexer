@@ -50,19 +50,16 @@ CREATE INDEX IF NOT EXISTS idx_detections_name ON detections(name COLLATE NOCASE
 
 def _migrate(db: sqlite3.Connection) -> None:
     """Apply schema migrations for existing databases."""
-    # Add validated column if missing (added in v0.3)
     det_cols = {row[1] for row in db.execute("PRAGMA table_info(detections)")}
     if "validated" not in det_cols:
         db.execute(
             "ALTER TABLE detections ADD COLUMN validated INTEGER NOT NULL DEFAULT 1"
         )
 
-    # Add run_id string column to runs (added in v0.4)
     run_cols = {row[1] for row in db.execute("PRAGMA table_info(runs)")}
     if "run_id" not in run_cols:
         db.execute("ALTER TABLE runs ADD COLUMN run_id TEXT")
 
-    # Add language column to videos (added in v0.4)
     vid_cols = {row[1] for row in db.execute("PRAGMA table_info(videos)")}
     if "language" not in vid_cols:
         db.execute("ALTER TABLE videos ADD COLUMN language TEXT DEFAULT 'pt-BR'")
@@ -82,9 +79,6 @@ def _get_db() -> sqlite3.Connection:
         _connection.executescript(_SCHEMA)
         _migrate(_connection)
     return _connection
-
-
-# ── Write operations ─────────────────────────────────────────────────
 
 
 def save_video(
@@ -132,12 +126,12 @@ def save_run(
 
     Args:
         video_id: YouTube video ID.
-        pipeline: Pipeline name ("games" or "maintenance").
+        pipeline: Pipeline name (e.g. "games").
         threshold: Confidence threshold used.
         blocklist: Blocklist terms used.
         aliases: Alias mappings used.
         hint: Whisper hint string used.
-        run_id: Data lake run identifier (e.g. "20260317_143500_games_a1b2c3d4").
+        run_id: Data lake run identifier.
 
     Returns:
         The auto-generated integer run ID.
@@ -189,14 +183,11 @@ def save_detections(run_id: int, mentions: list[dict]) -> None:
     db.commit()
 
 
-# ── Read operations ──────────────────────────────────────────────────
-
-
 def search_by_name(name: str) -> list[dict]:
     """Find all detections matching a name (case-insensitive).
 
     Args:
-        name: Entity name to search for (partial match with LIKE).
+        name: Entity name to search for.
 
     Returns:
         List of dicts with video and detection info.
@@ -247,7 +238,6 @@ def get_latest_detections(video_id: str) -> dict[str, list[dict]]:
     """
     db = _get_db()
 
-    # Find the latest run per pipeline
     latest_runs = db.execute(
         """SELECT id, pipeline FROM runs
            WHERE video_id = ?
