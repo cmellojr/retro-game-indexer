@@ -27,3 +27,7 @@ vector/embeddings/
 
 Thumbs.db
 .DS_Store
+.agents/
+.memory/
+opencode.json
+.ignore
